@@ -6,6 +6,7 @@ interface Props {
 
 interface State {
   error: Error | null;
+  componentStack?: string;
 }
 
 // Catches render-time (and effect) exceptions anywhere below it and shows a
@@ -18,14 +19,16 @@ export default class ErrorBoundary extends Component<Props, State> {
     return { error };
   }
 
-  componentDidCatch(error: Error) {
+  componentDidCatch(error: Error, errorInfo: { componentStack?: string }) {
     // Surface in the dev console as well
-    console.error("App render error:", error);
+    console.error("App render error:", error, errorInfo);
+    this.setState({ componentStack: errorInfo?.componentStack });
   }
 
   render() {
     if (this.state.error) {
       const { message, stack } = this.state.error;
+      const componentStack = this.state.componentStack || "";
       return (
         <div
           style={{
@@ -38,7 +41,11 @@ export default class ErrorBoundary extends Component<Props, State> {
         >
           <h2 style={{ marginTop: 0 }}>页面出错了（请把下面这段发我）</h2>
           <div style={{ fontWeight: "bold", marginBottom: 12 }}>{message}</div>
-          <div style={{ fontSize: 12, color: "#7f1d1d" }}>{stack}</div>
+          <div style={{ fontSize: 12, color: "#7f1d1d", marginBottom: 12 }}>{stack}</div>
+          <div style={{ fontSize: 12, color: "#7f1d1d" }}>
+            <div style={{ fontWeight: "bold", marginBottom: 4 }}>组件栈：</div>
+            {componentStack}
+          </div>
         </div>
       );
     }
