@@ -1,0 +1,23 @@
+# Render 一键部署配置（Blueprint）
+# 部署方法：Render 控制台 → New → Blueprint → 关联此仓库，Render 会自动按本文件创建服务。
+services:
+  - type: web
+    name: shenlun-chaijie
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: JWT_SECRET
+        generateValue: true
+      # Render 会自动注入 PORT，服务监听 process.env.PORT，无需手动设置
+
+# 说明：
+# - 后端 Express 与前端 React 打包产物(client/dist_v2)由同一服务托管，无需额外配置。
+# - 免费版磁盘为临时存储：服务重新部署/重启后 server/data/db.json 会被重置。
+#   若需要数据持久化，可后续挂载持久化磁盘或迁移到 SQLite（随时可升级）。

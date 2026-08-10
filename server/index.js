@@ -40,6 +40,11 @@ const JWT_SECRET = 'shenlun-toolkit-secret-key-2026';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// 公开健康检查（供 Render / 负载均衡探活，无需鉴权）
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
 // Auth middleware
 function auth(req, res, next) {
   const header = req.headers.authorization;
