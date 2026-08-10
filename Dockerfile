@@ -11,7 +11,9 @@ RUN npm install --omit=dev || npm install
 # 复制全部源码后在容器内构建前端（build 脚本会 cd client 安装并打包）
 COPY . .
 
-# Koyeb / 容器健康检查：复用后端公开接口
+# 构建前端（package.json 的 build 脚本会 cd client 安装依赖并打包到 dist_v2）
+RUN npm run build
+
 # 数据目录（挂载持久卷到这里以保留 db.json）
 RUN mkdir -p /app/server/data
 
