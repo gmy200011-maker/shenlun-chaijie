@@ -8,6 +8,16 @@ import "./index.css";
 
 // Surface uncaught async / effect errors (which React error boundaries do NOT
 // catch) as a visible message instead of a silent blank white screen.
+function safeText(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return (value.stack || value.message || String(value)) + "";
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
 function showFatal(msg: string) {
   const el = document.getElementById("root");
   if (el) {
@@ -17,11 +27,10 @@ function showFatal(msg: string) {
   }
 }
 window.addEventListener("error", (e) => {
-  showFatal((e.message || "error") + "\n" + (e.error && e.error.stack ? e.error.stack : ""));
+  showFatal(safeText(e.message) + "\n" + safeText(e.error));
 });
 window.addEventListener("unhandledrejection", (e) => {
-  const r = e.reason;
-  showFatal("Promise 未处理: " + (r && r.stack ? r.stack : r));
+  showFatal("Promise 未处理: " + safeText(e.reason));
 });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
