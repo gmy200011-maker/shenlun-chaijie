@@ -1,0 +1,19 @@
+# 依赖
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# 构建产物（部署时由 build 脚本重新生成）
+client/dist_v2/
+
+# 本地数据与日志
+server/data/db.json
+server.log
+*.log
+
+# 环境变量
+.env
+.env.local
+
+# 工作区内部数据（不要推到仓库）
+.workbuddy/
