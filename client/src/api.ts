@@ -22,28 +22,74 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On 401: clear stored session and notify AuthContext to handle logout
-// gracefully (via React Router) instead of a silent full-page reload that
-// would destroy any in-progress work (e.g. a pasted article).
+// Response interceptor:
+// 1. Detect error-shaped responses returned with 200 status
+//    (Vercel/Upstash runtime can return {code, message} as a 200 body)
+// 2. On 401: clear session and notify AuthContext
+// 3. Normalize all rejections to have a string .message
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    const d = res.data;
+    if (
+      d &&
+      typeof d === "object" &&
+      !Array.isArray(d) &&
+      "code" in d &&
+      "message" in d
+    ) {
+      // Check if this looks like an error object, not legitimate API data
+      const keys = Object.keys(d);
+      const errorLikeKeys = [
+        "code",
+        "message",
+        "error",
+        "stack",
+        "name",
+        "type",
+        "statusCode",
+      ];
+      const isErrorResponse =
+        keys.length <= 4 && keys.every((k) => errorLikeKeys.includes(k));
+      if (isErrorResponse) {
+        console.error("[API] Error-shaped response with 200 status:", d);
+        const error = new Error(d.message || "服务器错误");
+        (error as any).response = {
+          data: { error: d.message || "服务器错误" },
+          status: 500,
+        };
+        return Promise.reject(error);
+      }
+    }
+    return res;
+  },
   (err) => {
+    // 401 handling (before normalization, while we still have the original error)
     if (err.response?.status === 401) {
-      // Only treat a 401 as a session-expiry when it actually comes from our
-      // own auth layer (these responses carry an auth-related error message).
-      // Third-party upstream failures (e.g. an AI provider returning 401 for a
-      // bad API key, surfaced via /api/analyze as 502) must NOT log the user
-      // out — they are surfaced per-request as error messages instead.
       const msg = err.response?.data?.error || "";
       const isAuthError =
-        /未登录|登录已过期|用户不存在|unauthorized|invalid token|token/i.test(msg);
+        /未登录|登录已过期|用户不存在|unauthorized|invalid token|token/i.test(
+          msg
+        );
       if (isAuthError) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
         window.dispatchEvent(new CustomEvent("auth:unauthorized"));
       }
     }
-    return Promise.reject(err);
+    // Normalize error to always have a string .message
+    const msg =
+      err?.response?.data?.error ||
+      err?.response?.data?.message ||
+      err?.message ||
+      "网络请求失败";
+    const normalizedError = new Error(
+      typeof msg === "string" ? msg : String(msg)
+    );
+    // Preserve response for components that access it
+    if (err.response) {
+      (normalizedError as any).response = err.response;
+    }
+    return Promise.reject(normalizedError);
   }
 );
 
