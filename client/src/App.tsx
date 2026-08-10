@@ -13,6 +13,7 @@ import Settings from "./pages/Settings";
 import InterviewQuestions from "./pages/InterviewQuestions";
 import Quotes from "./pages/Quotes";
 import SolutionMethods from "./pages/SolutionMethods";
+import Notes from "./pages/Notes";
 
 export default function App() {
   const { user } = useAuth();
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/interview" element={<InterviewQuestions />} />
         <Route path="/quotes" element={<Quotes />} />
         <Route path="/solutions" element={<SolutionMethods />} />
+        <Route path="/notes" element={<Notes />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
 

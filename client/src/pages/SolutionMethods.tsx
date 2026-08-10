@@ -13,12 +13,22 @@ const domainColors: Record<string, string> = {
   生态: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
+interface Draft {
+  heading: string;
+  content: string;
+  domain: string;
+  tags: string;
+}
+
 export default function SolutionMethods() {
   const [list, setList] = useState<SolutionMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [activeDomain, setActiveDomain] = useState<string>("all");
   const [exporting, setExporting] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [savingId, setSavingId] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -43,6 +53,44 @@ export default function SolutionMethods() {
     domainCounts[d] = (domainCounts[d] || 0) + 1;
   });
 
+  const startEdit = (m: SolutionMethod) => {
+    setDraft({
+      heading: m.heading || "",
+      content: m.content || "",
+      domain: m.domain || "政治",
+      tags: (m.tags || []).join(", "),
+    });
+    setEditingId(m.id ?? null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft(null);
+  };
+
+  const saveEdit = async (m: SolutionMethod) => {
+    if (m.id == null || !draft) return;
+    setSavingId(m.id);
+    try {
+      await solutionApi.update(m.id, {
+        heading: draft.heading,
+        content: draft.content,
+        domain: draft.domain,
+        tags: draft.tags
+          .split(/[,，]/)
+          .map((s) => s.trim())
+          .filter(Boolean),
+      });
+      setEditingId(null);
+      setDraft(null);
+      await fetchData();
+    } catch {
+      alert("保存失败，请重试");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   const handleExport = () => {
     setExporting(true);
     try {
@@ -51,6 +99,11 @@ export default function SolutionMethods() {
       setExporting(false);
     }
   };
+
+  let filtered = list;
+  if (activeDomain !== "all") {
+    filtered = filtered.filter((m) => (m.domain || "未分类") === activeDomain);
+  }
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -114,7 +167,7 @@ export default function SolutionMethods() {
         <div className="flex items-center justify-center py-20">
           <div className="w-8 h-8 border-3 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
         </div>
-      ) : list.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="card p-12 text-center">
           <div className="text-4xl mb-4">💡</div>
           <h3 className="text-lg font-semibold text-ink-900 mb-2">
@@ -129,34 +182,100 @@ export default function SolutionMethods() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4">
-          {list.map((m) => (
+          {filtered.map((m) => (
             <div key={m.id} className="card p-5 hover:border-brand-300 transition-colors border-l-4 border-brand-300">
-              <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-                <span className={`badge border ${domainColors[m.domain || ""] || "bg-ink-50 text-ink-700 border-ink-200"}`}>
-                  {m.domain || "未分类"}
-                </span>
-                {m.articleId && (
-                  <Link to={`/articles/${m.articleId}`} className="text-xs text-brand-500 hover:text-brand-700 truncate">
-                    {m.articleTitle} →
-                  </Link>
-                )}
-              </div>
-              {m.heading && (
-                <h3 className="text-sm font-semibold text-ink-900 mb-1.5">{m.heading}</h3>
-              )}
-              <p className="text-sm text-ink-800 mb-3 leading-relaxed font-serif whitespace-pre-wrap">
-                {m.content}
-              </p>
-              {m.tags && m.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {m.tags.map((tag, ti) => (
-                    <span key={ti} className="tag">#{tag}</span>
-                  ))}
+              {editingId === m.id && draft ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-ink-500">方向标题</label>
+                    <input
+                      className="input-field w-full"
+                      value={draft.heading}
+                      onChange={(e) => setDraft({ ...draft, heading: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-ink-500">具体举措与预期效果</label>
+                    <textarea
+                      className="input-field w-full h-28"
+                      value={draft.content}
+                      onChange={(e) => setDraft({ ...draft, content: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-ink-500">领域</label>
+                      <select
+                        className="input-field w-full"
+                        value={draft.domain}
+                        onChange={(e) => setDraft({ ...draft, domain: e.target.value })}
+                      >
+                        {domains.map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-ink-500">标签（逗号分隔）</label>
+                      <input
+                        className="input-field w-full"
+                        value={draft.tags}
+                        onChange={(e) => setDraft({ ...draft, tags: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end pt-1">
+                    <button onClick={cancelEdit} className="btn-secondary text-sm">取消</button>
+                    <button
+                      onClick={() => saveEdit(m)}
+                      disabled={savingId === m.id}
+                      className="btn-primary text-sm"
+                    >
+                      {savingId === m.id ? "保存中…" : "保存"}
+                    </button>
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                    <span className={`badge border ${domainColors[m.domain || ""] || "bg-ink-50 text-ink-700 border-ink-200"}`}>
+                      {m.domain || "未分类"}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {m.articleId && (
+                        <Link to={`/articles/${m.articleId}`} className="text-xs text-brand-500 hover:text-brand-700 truncate">
+                          {m.articleTitle} →
+                        </Link>
+                      )}
+                      <button
+                        onClick={() => startEdit(m)}
+                        className="text-xs text-ink-400 hover:text-brand-600"
+                        title="编辑并同步到历史记录"
+                      >
+                        编辑
+                      </button>
+                    </div>
+                  </div>
+                  {m.heading && (
+                    <h3 className="text-sm font-semibold text-ink-900 mb-1.5">{m.heading}</h3>
+                  )}
+                  <p className="text-sm text-ink-800 mb-3 leading-relaxed font-serif whitespace-pre-wrap">
+                    {m.content}
+                  </p>
+                  {m.tags && m.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {m.tags.map((tag, ti) => (
+                        <span key={ti} className="tag">#{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="pt-2 border-t border-ink-100 flex items-center justify-between">
+                    <span className="text-xs text-ink-400">
+                      {new Date(m.createdAt || "").toLocaleDateString("zh-CN")}
+                    </span>
+                  </div>
+                </>
               )}
-              <div className="pt-2 border-t border-ink-100 text-xs text-ink-400">
-                {new Date(m.createdAt || "").toLocaleDateString("zh-CN")}
-              </div>
             </div>
           ))}
         </div>

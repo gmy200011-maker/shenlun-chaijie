@@ -169,6 +169,22 @@ class WordDoc {
     this.body.push('<w:p><w:pPr><w:spacing w:after="60"/></w:pPr></w:p>');
   }
 
+  h3(text: string) {
+    this.body.push(this.paragraph(text, { bold: true, size: 21, after: 60 }));
+  }
+
+  // 同一段落内支持逐 run 的加粗/字号（用于富文本笔记中的混合样式）
+  paragraphRuns(
+    runs: { text: string; bold?: boolean; size?: number }[],
+    opts: { align?: "left" | "center" | "right"; after?: number } = {}
+  ) {
+    const jc = opts.align ? `<w:jc w:val="${opts.align}"/>` : "";
+    const after = opts.after ?? 120;
+    const ppr = `<w:pPr>${jc}<w:spacing w:after="${after}" w:line="276" w:lineRule="auto"/></w:pPr>`;
+    const rxml = runs.map((r) => this.run(r.text, !!r.bold, r.size)).join("");
+    this.body.push(`<w:p>${ppr}${rxml}</w:p>`);
+  }
+
   toDocumentXml(): string {
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${this.body.join(
@@ -227,6 +243,7 @@ import type { Quote } from "../types";
 import type { MaterialCase } from "../types";
 import type { InterviewQuestion } from "../types";
 import type { SolutionMethod } from "../types";
+import type { Note } from "../types";
 
 export function exportQuotesDoc(list: Quote[], filename = "金句库") {
   buildAndDownload(filename, (doc) => {
@@ -309,6 +326,88 @@ export function exportSolutionMethodsDoc(list: SolutionMethod[], filename = "解
       if (meta.length) doc.p(meta.join("　|　"), { size: 18 });
       doc.p(m.content, {});
       if (m.articleTitle) doc.p(`来源文章：${m.articleTitle}`, { size: 18 });
+      doc.blank();
+    });
+  });
+}
+
+// ---------- 随手记 HTML -> Word 转换 ----------
+interface HtmlRun {
+  text: string;
+  bold: boolean;
+  size?: number;
+}
+
+function collectRuns(node: Node, base: { bold: boolean; size?: number }): HtmlRun[] {
+  const out: HtmlRun[] = [];
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE) {
+      const t = child.textContent || "";
+      if (t) out.push({ text: t, bold: base.bold, size: base.size });
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      const el = child as HTMLElement;
+      const tag = el.tagName;
+      let bold = base.bold;
+      let size = base.size;
+      if (tag === "B" || tag === "STRONG") bold = true;
+      const fs = (el.style.fontSize || "").trim();
+      const m = fs.match(/(\d+(?:\.\d+)?)\s*px/i);
+      if (m) {
+        const n = parseFloat(m[1]);
+        if (!isNaN(n)) size = Math.round(n * 2);
+      }
+      const fw = (el.style.fontWeight || "").trim();
+      if (fw === "bold" || fw === "700") bold = true;
+      out.push(...collectRuns(el, { bold, size }));
+    }
+  });
+  return out;
+}
+
+function htmlToWord(doc: WordDoc, html: string) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html || "";
+  for (const node of Array.from(tmp.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = (node.textContent || "").trim();
+      if (t) doc.paragraphRuns([{ text: t }]);
+      continue;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+    const el = node as HTMLElement;
+    const tag = el.tagName;
+    const runs = collectRuns(el, { bold: false, size: undefined });
+    const text = runs.map((r) => r.text).join("");
+    if (tag === "H1") doc.h1(text || "（空标题）");
+    else if (tag === "H2") doc.h2(text || "（空标题）");
+    else if (tag === "H3") doc.h3(text || "（空标题）");
+    else if (tag === "UL" || tag === "OL") {
+      Array.from(el.children).forEach((li) => {
+        const lr = collectRuns(li, { bold: false, size: undefined });
+        doc.bullet(lr.map((r) => r.text).join(""));
+      });
+    } else {
+      doc.paragraphRuns(runs);
+    }
+  }
+}
+
+export function exportNotesDoc(list: Note[], filename = "随手记") {
+  buildAndDownload(filename, (doc) => {
+    doc.title("随手记");
+    doc.p(`共 ${list.length} 篇笔记 · 导出时间 ${new Date().toLocaleString("zh-CN")}`, {
+      size: 18,
+      align: "center",
+    });
+    doc.blank();
+    list.forEach((note, i) => {
+      doc.h1(`${i + 1}. ${note.title || "未命名笔记"}`);
+      doc.p(
+        `更新时间：${note.updatedAt ? new Date(note.updatedAt).toLocaleString("zh-CN") : ""}`,
+        { size: 18 }
+      );
+      doc.blank();
+      htmlToWord(doc, note.content || "");
       doc.blank();
     });
   });

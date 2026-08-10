@@ -93,3 +93,72 @@
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   }
 }
+
+/* ===== 随手记 编辑器 / 只读渲染 ===== */
+.note-editor,
+.note-render {
+  font-family: "Noto Serif SC", "Inter", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: #2a2620;
+  line-height: 1.8;
+  font-size: 16px;
+  word-break: break-word;
+}
+
+.note-editor:focus {
+  outline: none;
+}
+
+.note-editor h1,
+.note-render h1 {
+  font-size: 1.7rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 1.1rem 0 0.6rem;
+  color: #1f1b15;
+}
+
+.note-editor h2,
+.note-render h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0.9rem 0 0.5rem;
+  color: #26211a;
+}
+
+.note-editor h3,
+.note-render h3 {
+  font-size: 1.12rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.7rem 0 0.4rem;
+  color: #322c24;
+}
+
+.note-editor p,
+.note-render p {
+  margin: 0.5rem 0;
+}
+
+.note-editor ul,
+.note-render ul,
+.note-editor ol,
+.note-render ol {
+  margin: 0.5rem 0;
+  padding-left: 1.4rem;
+}
+
+.note-editor li,
+.note-render li {
+  margin: 0.2rem 0;
+}
+
+.note-editor blockquote,
+.note-render blockquote {
+  border-left: 3px solid #c9a36a;
+  padding-left: 0.9rem;
+  margin: 0.7rem 0;
+  color: #5b5346;
+  font-style: italic;
+}

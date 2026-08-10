@@ -112,7 +112,7 @@ export default function ArticleDetail() {
     }
   };
 
-  const handleSaveQuote = async (q: GoldenQuote, i: number) => {
+  const handleSaveQuote = async (q: GoldenQuote, i: number, linkId?: string | null) => {
     if (!q.quote.trim() || !article) return;
     try {
       await quotesApi.save({
@@ -120,6 +120,7 @@ export default function ArticleDetail() {
         source: q.source,
         articleId: article.id,
         articleTitle: article.title,
+        linkId: linkId ?? null,
       });
       setSavedQuotes((prev) => new Set(prev).add(i));
     } catch {
@@ -131,7 +132,8 @@ export default function ArticleDetail() {
     p: AnalysisPoint,
     domain: string,
     tags: string[],
-    i: number
+    i: number,
+    linkId?: string | null
   ) => {
     if (!p.content.trim() || !article) return;
     try {
@@ -142,6 +144,7 @@ export default function ArticleDetail() {
         tags,
         articleId: article.id,
         articleTitle: article.title,
+        linkId: linkId ?? null,
       });
       setSavedSolutions((prev) => new Set(prev).add(i));
     } catch {

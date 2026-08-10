@@ -13,11 +13,20 @@ interface Quote {
   createdAt: string;
 }
 
+interface Draft {
+  quote: string;
+  source: string;
+  tags: string;
+}
+
 export default function Quotes() {
   const [list, setList] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [activeTag, setActiveTag] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [savingId, setSavingId] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -37,6 +46,42 @@ export default function Quotes() {
   }, [fetchData]);
 
   const allTags = Array.from(new Set(list.flatMap((c) => c.tags || []))).sort();
+
+  const startEdit = (item: Quote) => {
+    setDraft({
+      quote: item.quote || "",
+      source: item.source || "",
+      tags: (item.tags || []).join(", "),
+    });
+    setEditingId(item.id);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft(null);
+  };
+
+  const saveEdit = async (item: Quote) => {
+    if (!draft) return;
+    setSavingId(item.id);
+    try {
+      await quotesApi.update(item.id, {
+        quote: draft.quote,
+        source: draft.source,
+        tags: draft.tags
+          .split(/[,，]/)
+          .map((s) => s.trim())
+          .filter(Boolean),
+      });
+      setEditingId(null);
+      setDraft(null);
+      await fetchData();
+    } catch {
+      alert("保存失败，请重试");
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -116,30 +161,80 @@ export default function Quotes() {
         <div className="grid grid-cols-2 gap-4">
           {list.map((item) => (
             <div key={item.id} className="card p-5 hover:border-brand-300 transition-colors border-l-4 border-brand-300">
-              <blockquote className="text-sm font-serif text-ink-900 leading-relaxed">
-                {item.quote}
-              </blockquote>
-              {item.source && (
-                <p className="text-xs text-ink-400 mt-2">—— {item.source}</p>
-              )}
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-ink-100 gap-2 flex-wrap">
-                {item.articleId ? (
-                  <Link to={`/articles/${item.articleId}`} className="text-xs text-brand-500 hover:text-brand-700 truncate">
-                    来源：{item.articleTitle || "未知文章"} →
-                  </Link>
-                ) : (
-                  <span className="text-xs text-ink-400">来源：未关联文章</span>
-                )}
-                <span className="text-xs text-ink-400 shrink-0">
-                  {new Date(item.createdAt).toLocaleDateString("zh-CN")}
-                </span>
-              </div>
-              {item.tags?.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {item.tags.map((tag, ti) => (
-                    <span key={ti} className="tag">#{tag}</span>
-                  ))}
+              {editingId === item.id && draft ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-ink-500">金句内容</label>
+                    <textarea
+                      className="input-field w-full h-24"
+                      value={draft.quote}
+                      onChange={(e) => setDraft({ ...draft, quote: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-ink-500">出处</label>
+                    <input
+                      className="input-field w-full"
+                      value={draft.source}
+                      onChange={(e) => setDraft({ ...draft, source: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-ink-500">标签（逗号分隔）</label>
+                    <input
+                      className="input-field w-full"
+                      value={draft.tags}
+                      onChange={(e) => setDraft({ ...draft, tags: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end pt-1">
+                    <button onClick={cancelEdit} className="btn-secondary text-sm">取消</button>
+                    <button
+                      onClick={() => saveEdit(item)}
+                      disabled={savingId === item.id}
+                      className="btn-primary text-sm"
+                    >
+                      {savingId === item.id ? "保存中…" : "保存"}
+                    </button>
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <blockquote className="text-sm font-serif text-ink-900 leading-relaxed">
+                    {item.quote}
+                  </blockquote>
+                  {item.source && (
+                    <p className="text-xs text-ink-400 mt-2">—— {item.source}</p>
+                  )}
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-ink-100 gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {item.articleId ? (
+                        <Link to={`/articles/${item.articleId}`} className="text-xs text-brand-500 hover:text-brand-700 truncate">
+                          来源：{item.articleTitle || "未知文章"} →
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-ink-400">来源：未关联文章</span>
+                      )}
+                      <button
+                        onClick={() => startEdit(item)}
+                        className="text-xs text-ink-400 hover:text-brand-600"
+                        title="编辑并同步到历史记录"
+                      >
+                        编辑
+                      </button>
+                    </div>
+                    <span className="text-xs text-ink-400 shrink-0">
+                      {new Date(item.createdAt).toLocaleDateString("zh-CN")}
+                    </span>
+                  </div>
+                  {item.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {item.tags.map((tag, ti) => (
+                        <span key={ti} className="tag">#{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ))}

@@ -6,6 +6,7 @@ import type {
   Settings,
   AnalysisResult,
   MaterialCase,
+  Note,
 } from "./types";
 
 const api = axios.create({
@@ -92,6 +93,13 @@ export const materialApi = {
     api
       .get<MaterialCase[]>("/materials/search", { params: { q: query } })
       .then((r) => r.data),
+  update: (articleId: number, linkId: string, data: Partial<MaterialCase>) =>
+    api
+      .put<{ success: boolean; card: MaterialCase }>(
+        `/materials/${articleId}/${linkId}`,
+        data
+      )
+      .then((r) => r.data),
 };
 
 // ===== Settings =====
@@ -117,6 +125,10 @@ export const interviewApi = {
     api
       .get<any[]>("/interview-questions", { params: params || {} })
       .then((r) => r.data),
+  update: (id: number, data: { question?: string; type?: string; answerIdea?: string }) =>
+    api
+      .put<{ success: boolean; question: any }>(`/interview-questions/${id}`, data)
+      .then((r) => r.data),
 };
 
 // ===== Quotes (金句库) =====
@@ -128,9 +140,14 @@ export const quotesApi = {
     source?: string;
     articleId?: number;
     articleTitle?: string;
+    linkId?: string | null;
     tags?: string[];
   }) =>
     api.post<{ success: boolean; quote: any }>("/quotes", data).then((r) => r.data),
+  update: (id: number, data: { quote?: string; source?: string; tags?: string[] }) =>
+    api
+      .put<{ success: boolean; quote: any }>(`/quotes/${id}`, data)
+      .then((r) => r.data),
 };
 
 // ===== Solution Methods (解决方法库) =====
@@ -146,8 +163,30 @@ export const solutionApi = {
     tags?: string[];
     articleId?: number;
     articleTitle?: string;
+    linkId?: string | null;
   }) =>
     api
       .post<{ success: boolean; method: any }>("/solution-methods", data)
       .then((r) => r.data),
+  update: (id: number, data: { heading?: string; content?: string; domain?: string; tags?: string[] }) =>
+    api
+      .put<{ success: boolean; method: any }>(`/solution-methods/${id}`, data)
+      .then((r) => r.data),
+};
+
+// ===== Notes (随手记) =====
+export const noteApi = {
+  list: () => api.get<Note[]>("/notes").then((r) => r.data),
+  get: (id: number) =>
+    api.get<Note>(`/notes/${id}`).then((r) => r.data),
+  create: (data: { title: string; content: string }) =>
+    api
+      .post<{ success: boolean; note: Note }>("/notes", data)
+      .then((r) => r.data),
+  update: (id: number, data: { title: string; content: string }) =>
+    api
+      .put<{ success: boolean; note: Note }>(`/notes/${id}`, data)
+      .then((r) => r.data),
+  delete: (id: number) =>
+    api.delete(`/notes/${id}`).then((r) => r.data),
 };

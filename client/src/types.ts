@@ -18,6 +18,7 @@ export interface MaterialCase {
   usageScenario: string;
   // Runtime-only fields (from search results)
   cardId?: string;
+  linkId?: string;
   articleId?: number;
   articleTitle?: string;
 }
@@ -56,6 +57,15 @@ export interface SolutionMethod {
   createdAt?: string;
 }
 
+// ===== Note (随手记) =====
+export interface Note {
+  id?: number;
+  title: string;
+  content: string; // 富文本 HTML
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // 层次化分析要点（现象剖析 / 解决方法 使用）
 export interface AnalysisPoint {
   heading: string; // 层次小标题，如「表层表现」「深层根源」
@@ -84,6 +94,7 @@ export interface Stats {
   totalQuotes: number;
   totalInterviews: number;
   totalSolutions: number;
+  totalNotes: number;
   casesByType: Record<string, number>;
   casesByDomain: Record<string, number>;
   recentArticles: {

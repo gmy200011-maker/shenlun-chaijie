@@ -42,6 +42,7 @@ export default function Dashboard() {
     { label: "面试题目", value: stats.totalInterviews, icon: "🎯", color: "bg-sky-50 text-sky-700", to: "/interview" },
     { label: "金句收藏", value: stats.totalQuotes, icon: "💎", color: "bg-amber-50 text-amber-700", to: "/quotes" },
     { label: "解决方法", value: stats.totalSolutions, icon: "💡", color: "bg-violet-50 text-violet-700", to: "/solutions" },
+    { label: "随手记", value: stats.totalNotes, icon: "📝", color: "bg-sky-50 text-sky-700", to: "/notes" },
   ];
 
   const domainDist = stats.casesByDomain || {};
@@ -54,7 +55,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-5 mb-8">
+      <div className="grid grid-cols-6 gap-5 mb-8">
         {statCards.map((card) => (
           <Link key={card.label} to={card.to} className="card p-6 hover:border-brand-300 transition-colors block">
             <div className="flex items-center justify-between mb-3">

@@ -19,12 +19,14 @@ function initDB() {
       interviewQuestions: [],
       quotes: [],
       solutionMethods: [],
+      notes: [],
       nextUserId: 1,
       nextArticleId: 1,
       nextSettingsId: 1,
       nextInterviewId: 1,
       nextQuoteId: 1,
       nextSolutionId: 1,
+      nextNoteId: 1,
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(defaultDB, null, 2));
   }
@@ -39,9 +41,11 @@ function readDB() {
     interviewQuestions: [],
     quotes: [],
     solutionMethods: [],
+    notes: [],
     nextInterviewId: 1,
     nextQuoteId: 1,
     nextSolutionId: 1,
+    nextNoteId: 1,
   };
   let changed = false;
   for (const k of Object.keys(defaults)) {
@@ -97,34 +101,51 @@ function getArticleById(id, userId) {
 
 function createArticle(userId, data) {
   const db = readDB();
+  const id = db.nextArticleId++;
+  const now = new Date().toISOString();
+  const materialCases = (data.materialCases || []).map((c, i) => ({
+    ...c,
+    id: `mc_${id}_${i}`,
+  }));
+  const goldenQuotes = (data.goldenQuotes || []).map((q, i) => ({
+    ...q,
+    id: `gq_${id}_${i}`,
+  }));
+  const solutions = (data.solutions || []).map((s, i) => ({
+    ...s,
+    id: `sm_${id}_${i}`,
+  }));
   const article = {
-    id: db.nextArticleId++,
+    id,
     userId,
     title: data.title || '未命名文章',
     content: data.content || '',
     background: data.background || '',
     phenomenonAnalysis: data.phenomenonAnalysis || '',
-    solutions: data.solutions || '',
-    goldenQuotes: data.goldenQuotes || [],
-    materialCases: data.materialCases || [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    solutions,
+    goldenQuotes,
+    materialCases,
+    createdAt: now,
+    updatedAt: now,
   };
   db.articles.push(article);
 
   // Auto-save interview question linked to this article
   if (data.interviewQuestion && data.interviewQuestion.question) {
+    const iqLinkId = `iq_${id}_0`;
     const iq = {
       id: db.nextInterviewId++,
+      linkId: iqLinkId,
       userId,
-      articleId: article.id,
+      articleId: id,
       articleTitle: article.title,
       question: data.interviewQuestion.question,
       type: data.interviewQuestion.type || '综合分析',
       answerIdea: data.interviewQuestion.answerIdea || '',
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     };
     db.interviewQuestions.push(iq);
+    article.interviewQuestion = { ...data.interviewQuestion, id: iqLinkId };
   }
 
   writeDB(db);
@@ -242,6 +263,7 @@ function searchMaterialCases(userId, query) {
         cards.push({
           ...card,
           cardId: `${article.id}-${idx}`,
+          linkId: card.id || `${article.id}-${idx}`,
           articleId: article.id,
           articleTitle: article.title,
         });
@@ -283,6 +305,7 @@ function createQuote(userId, data) {
     userId,
     articleId: data.articleId || null,
     articleTitle: data.articleTitle || '',
+    linkId: data.linkId || null,
     quote: data.quote || '',
     source: data.source || '',
     tags: data.tags || [],
@@ -326,6 +349,7 @@ function createSolutionMethod(userId, data) {
     userId,
     articleId: data.articleId || null,
     articleTitle: data.articleTitle || '',
+    linkId: data.linkId || null,
     heading: (data.heading || '').trim(),
     content,
     domain: data.domain || '政治',
@@ -355,6 +379,170 @@ function getSolutionMethods(userId, { q = '', domain = '' } = {}) {
   return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
+// Notes operations (随手记)
+function createNote(userId, data) {
+  const db = readDB();
+  const note = {
+    id: db.nextNoteId++,
+    userId,
+    title: (data.title || '').trim() || '未命名笔记',
+    content: data.content || '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  db.notes.push(note);
+  writeDB(db);
+  return note;
+}
+
+function updateNote(userId, id, data) {
+  const db = readDB();
+  const idx = db.notes.findIndex(n => n.id === id && n.userId === userId);
+  if (idx === -1) return null;
+  db.notes[idx] = {
+    ...db.notes[idx],
+    title: (data.title || '').trim() || db.notes[idx].title,
+    content: data.content || '',
+    updatedAt: new Date().toISOString(),
+  };
+  writeDB(db);
+  return db.notes[idx];
+}
+
+function getNotes(userId) {
+  const db = readDB();
+  return db.notes
+    .filter(n => n.userId === userId)
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
+function getNote(userId, id) {
+  const db = readDB();
+  return db.notes.find(n => n.id === id && n.userId === userId) || null;
+}
+
+function deleteNote(userId, id) {
+  const db = readDB();
+  const idx = db.notes.findIndex(n => n.id === id && n.userId === userId);
+  if (idx === -1) return false;
+  db.notes.splice(idx, 1);
+  writeDB(db);
+  return true;
+}
+
+// ===== In-place edit of library entries, with sync back to the source article =====
+// New data carries linkId (the article-internal item id) for precise write-back;
+// legacy data without linkId falls back to matching by the original content.
+function updateQuote(userId, id, data, sync) {
+  const db = readDB();
+  const idx = db.quotes.findIndex((q) => q.id === id && q.userId === userId);
+  if (idx === -1) return null;
+  const q = db.quotes[idx];
+  const next = {
+    ...q,
+    quote: data.quote != null ? String(data.quote).trim() : q.quote,
+    source: data.source != null ? data.source : q.source,
+    tags: Array.isArray(data.tags) ? data.tags : q.tags,
+  };
+  db.quotes[idx] = next;
+  if (sync && q.articleId) {
+    const a = db.articles.find((x) => x.id === q.articleId && x.userId === userId);
+    if (a && Array.isArray(a.goldenQuotes)) {
+      let i = q.linkId ? a.goldenQuotes.findIndex((g) => g.id === q.linkId) : -1;
+      if (i === -1) i = a.goldenQuotes.findIndex((g) => g.quote === q.quote && g.source === q.source);
+      if (i >= 0) {
+        a.goldenQuotes[i] = { ...a.goldenQuotes[i], quote: next.quote, source: next.source };
+        a.updatedAt = new Date().toISOString();
+      }
+    }
+  }
+  writeDB(db);
+  return next;
+}
+
+function updateSolutionMethod(userId, id, data, sync) {
+  const db = readDB();
+  const idx = db.solutionMethods.findIndex((m) => m.id === id && m.userId === userId);
+  if (idx === -1) return null;
+  const m = db.solutionMethods[idx];
+  const next = {
+    ...m,
+    heading: data.heading != null ? data.heading : m.heading,
+    content: data.content != null ? data.content : m.content,
+    domain: data.domain != null ? data.domain : m.domain,
+    tags: Array.isArray(data.tags) ? data.tags : m.tags,
+  };
+  db.solutionMethods[idx] = next;
+  if (sync && m.articleId) {
+    const a = db.articles.find((x) => x.id === m.articleId && x.userId === userId);
+    if (a && Array.isArray(a.solutions)) {
+      let i = m.linkId ? a.solutions.findIndex((s) => s.id === m.linkId) : -1;
+      if (i === -1) i = a.solutions.findIndex((s) => s.content === m.content);
+      if (i >= 0) {
+        a.solutions[i] = { ...a.solutions[i], heading: next.heading, content: next.content };
+        a.updatedAt = new Date().toISOString();
+      }
+    }
+  }
+  writeDB(db);
+  return next;
+}
+
+function updateInterviewQuestion(userId, id, data, sync) {
+  const db = readDB();
+  const idx = db.interviewQuestions.findIndex((q) => q.id === id && q.userId === userId);
+  if (idx === -1) return null;
+  const q = db.interviewQuestions[idx];
+  const next = {
+    ...q,
+    question: data.question != null ? data.question : q.question,
+    type: data.type != null ? data.type : q.type,
+    answerIdea: data.answerIdea != null ? data.answerIdea : q.answerIdea,
+  };
+  db.interviewQuestions[idx] = next;
+  if (sync && q.articleId) {
+    const a = db.articles.find((x) => x.id === q.articleId && x.userId === userId);
+    if (a) {
+      a.interviewQuestion = {
+        ...(a.interviewQuestion || {}),
+        question: next.question,
+        type: next.type,
+        answerIdea: next.answerIdea,
+      };
+      a.updatedAt = new Date().toISOString();
+    }
+  }
+  writeDB(db);
+  return next;
+}
+
+// Materials library is a direct aggregate of each article's materialCases,
+// so editing a card writes straight back to the source article.
+function updateMaterialCase(userId, articleId, linkId, data) {
+  const db = readDB();
+  const a = db.articles.find((x) => x.id === articleId && x.userId === userId);
+  if (!a || !Array.isArray(a.materialCases)) return null;
+  let idx = a.materialCases.findIndex((c) => c.id === linkId);
+  if (idx === -1) {
+    // legacy fallback: linkId may be `articleId-idx`
+    const m = /^(\d+)-(\d+)$/.exec(linkId || '');
+    if (m && Number(m[1]) === articleId) idx = Number(m[2]);
+  }
+  if (idx === -1 || !a.materialCases[idx]) return null;
+  const c = a.materialCases[idx];
+  a.materialCases[idx] = {
+    ...c,
+    summary: data.summary != null ? data.summary : c.summary,
+    type: data.type != null ? data.type : c.type,
+    domain: data.domain != null ? data.domain : c.domain,
+    tags: Array.isArray(data.tags) ? data.tags : c.tags,
+    usageScenario: data.usageScenario != null ? data.usageScenario : c.usageScenario,
+  };
+  a.updatedAt = new Date().toISOString();
+  writeDB(db);
+  return a.materialCases[idx];
+}
+
 // Stats
 function getStats(userId) {
   const db = readDB();
@@ -375,12 +563,14 @@ function getStats(userId) {
   const quotesCount = articles.reduce((sum, a) => sum + (a.goldenQuotes || []).length, 0);
   const interviewsCount = db.interviewQuestions.filter(iq => iq.userId === userId).length;
   const solutionsCount = db.solutionMethods.filter(m => m.userId === userId).length;
+  const notesCount = db.notes.filter(n => n.userId === userId).length;
   return {
     totalArticles: articles.length,
     totalCases: allCases.length,
     totalQuotes: quotesCount,
     totalInterviews: interviewsCount,
     totalSolutions: solutionsCount,
+    totalNotes: notesCount,
     casesByType,
     casesByDomain,
     recentArticles: articles
@@ -413,7 +603,16 @@ module.exports = {
   getInterviewQuestions,
   createQuote,
   getQuotes,
+  updateQuote,
   createSolutionMethod,
   getSolutionMethods,
+  updateSolutionMethod,
+  updateInterviewQuestion,
+  updateMaterialCase,
+  createNote,
+  updateNote,
+  getNotes,
+  getNote,
+  deleteNote,
   getStats,
 };

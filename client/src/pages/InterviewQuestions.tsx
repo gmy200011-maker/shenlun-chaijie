@@ -13,6 +13,12 @@ interface InterviewQuestion {
   createdAt: string;
 }
 
+interface Draft {
+  question: string;
+  type: string;
+  answerIdea: string;
+}
+
 const types = ["综合分析", "应急应变", "组织管理", "人际关系", "情景模拟", "自我认知"];
 
 const typeColors: Record<string, string> = {
@@ -29,6 +35,9 @@ export default function InterviewQuestions() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [activeType, setActiveType] = useState<string>("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [savingId, setSavingId] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -46,6 +55,39 @@ export default function InterviewQuestions() {
     const timer = setTimeout(fetchData, 300);
     return () => clearTimeout(timer);
   }, [fetchData]);
+
+  const startEdit = (item: InterviewQuestion) => {
+    setDraft({
+      question: item.question || "",
+      type: item.type || "综合分析",
+      answerIdea: item.answerIdea || "",
+    });
+    setEditingId(item.id);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft(null);
+  };
+
+  const saveEdit = async (item: InterviewQuestion) => {
+    if (!draft) return;
+    setSavingId(item.id);
+    try {
+      await interviewApi.update(item.id, {
+        question: draft.question,
+        type: draft.type,
+        answerIdea: draft.answerIdea,
+      });
+      setEditingId(null);
+      setDraft(null);
+      await fetchData();
+    } catch {
+      alert("保存失败，请重试");
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -128,36 +170,86 @@ export default function InterviewQuestions() {
         <div className="space-y-4">
           {list.map((item) => (
             <div key={item.id} className="card p-6 hover:border-brand-300 transition-colors">
-              <div className="flex items-start gap-3">
-                <span className="text-xl shrink-0 mt-0.5">🎯</span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap mb-2">
-                    <span className={`badge border ${typeColors[item.type] || "bg-ink-50 text-ink-700 border-ink-200"}`}>
-                      {item.type}
-                    </span>
-                    {item.articleId && (
-                      <Link
-                        to={`/articles/${item.articleId}`}
-                        className="text-xs text-brand-500 hover:text-brand-700"
-                      >
-                        来源：{item.articleTitle || "未知文章"} →
-                      </Link>
-                    )}
-                    <span className="text-xs text-ink-400 ml-auto">
-                      {new Date(item.createdAt).toLocaleDateString("zh-CN")}
-                    </span>
+              {editingId === item.id && draft ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-ink-500">题型</label>
+                    <select
+                      className="input-field w-full"
+                      value={draft.type}
+                      onChange={(e) => setDraft({ ...draft, type: e.target.value })}
+                    >
+                      {types.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
                   </div>
-                  <h3 className="text-base font-semibold text-ink-900 leading-relaxed mb-3 font-serif">
-                    {item.question}
-                  </h3>
-                  <div className="bg-ink-50/60 rounded-lg p-4">
-                    <div className="text-xs font-semibold text-ink-500 mb-2">参考回答思路</div>
-                    <p className="text-sm text-ink-800 leading-relaxed whitespace-pre-wrap font-serif">
-                      {item.answerIdea}
-                    </p>
+                  <div>
+                    <label className="text-xs text-ink-500">题干</label>
+                    <textarea
+                      className="input-field w-full h-20"
+                      value={draft.question}
+                      onChange={(e) => setDraft({ ...draft, question: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-ink-500">参考回答思路</label>
+                    <textarea
+                      className="input-field w-full h-32"
+                      value={draft.answerIdea}
+                      onChange={(e) => setDraft({ ...draft, answerIdea: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end pt-1">
+                    <button onClick={cancelEdit} className="btn-secondary text-sm">取消</button>
+                    <button
+                      onClick={() => saveEdit(item)}
+                      disabled={savingId === item.id}
+                      className="btn-primary text-sm"
+                    >
+                      {savingId === item.id ? "保存中…" : "保存"}
+                    </button>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-start gap-3">
+                  <span className="text-xl shrink-0 mt-0.5">🎯</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      <span className={`badge border ${typeColors[item.type] || "bg-ink-50 text-ink-700 border-ink-200"}`}>
+                        {item.type}
+                      </span>
+                      {item.articleId && (
+                        <Link
+                          to={`/articles/${item.articleId}`}
+                          className="text-xs text-brand-500 hover:text-brand-700"
+                        >
+                          来源：{item.articleTitle || "未知文章"} →
+                        </Link>
+                      )}
+                      <button
+                        onClick={() => startEdit(item)}
+                        className="text-xs text-ink-400 hover:text-brand-600 ml-auto"
+                        title="编辑并同步到历史记录"
+                      >
+                        编辑
+                      </button>
+                      <span className="text-xs text-ink-400">
+                        {new Date(item.createdAt).toLocaleDateString("zh-CN")}
+                      </span>
+                    </div>
+                    <h3 className="text-base font-semibold text-ink-900 leading-relaxed mb-3 font-serif">
+                      {item.question}
+                    </h3>
+                    <div className="bg-ink-50/60 rounded-lg p-4">
+                      <div className="text-xs font-semibold text-ink-500 mb-2">参考回答思路</div>
+                      <p className="text-sm text-ink-800 leading-relaxed whitespace-pre-wrap font-serif">
+                        {item.answerIdea}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

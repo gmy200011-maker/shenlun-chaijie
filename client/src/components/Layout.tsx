@@ -9,6 +9,7 @@ const navItems = [
   { path: "/interview", label: "面试题目库", icon: "🎯" },
   { path: "/quotes", label: "金句库", icon: "💎" },
   { path: "/solutions", label: "解决方法库", icon: "💡" },
+  { path: "/notes", label: "随手记", icon: "📝" },
   { path: "/settings", label: "设置", icon: "⚙️" },
 ];
 

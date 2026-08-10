@@ -18,8 +18,17 @@ import {
   getInterviewQuestions,
   createQuote,
   getQuotes,
+  updateQuote,
   createSolutionMethod,
   getSolutionMethods,
+  updateSolutionMethod,
+  updateInterviewQuestion,
+  updateMaterialCase,
+  createNote,
+  updateNote,
+  getNotes,
+  getNote,
+  deleteNote,
 } from './db.js';
 
 const VALID_DOMAINS = ['政治', '经济', '文化', '社会', '生态'];
@@ -147,12 +156,30 @@ app.get('/api/materials/search', auth, (req, res) => {
   res.json(results);
 });
 
+// Edit a single material case (writes straight back to the source article)
+app.put('/api/materials/:articleId/:linkId', auth, (req, res) => {
+  const updated = updateMaterialCase(
+    req.user.id,
+    parseInt(req.params.articleId),
+    req.params.linkId,
+    req.body || {}
+  );
+  if (!updated) return res.status(404).json({ error: '素材不存在' });
+  res.json({ success: true, card: updated });
+});
+
 // ============ Interview Questions Routes ============
 
 app.get('/api/interview-questions', auth, (req, res) => {
   const { q = '', type = '' } = req.query;
   const results = getInterviewQuestions(req.user.id, { q, type });
   res.json(results);
+});
+
+app.put('/api/interview-questions/:id', auth, (req, res) => {
+  const updated = updateInterviewQuestion(req.user.id, Number(req.params.id), req.body || {}, true);
+  if (!updated) return res.status(404).json({ error: '面试题不存在' });
+  res.json({ success: true, question: updated });
 });
 
 // ============ Quotes (金句库) Routes ============
@@ -176,6 +203,12 @@ app.get('/api/quotes', auth, (req, res) => {
   const { q = '', tag = '' } = req.query;
   const results = getQuotes(req.user.id, { q, tag });
   res.json(results);
+});
+
+app.put('/api/quotes/:id', auth, (req, res) => {
+  const updated = updateQuote(req.user.id, Number(req.params.id), req.body || {}, true);
+  if (!updated) return res.status(404).json({ error: '金句不存在' });
+  res.json({ success: true, quote: updated });
 });
 
 // ============ Solution Methods (解决方法库) Routes ============
@@ -203,6 +236,52 @@ app.get('/api/solution-methods', auth, (req, res) => {
   const { q = '', domain = '' } = req.query;
   const results = getSolutionMethods(req.user.id, { q, domain });
   res.json(results);
+});
+
+app.put('/api/solution-methods/:id', auth, (req, res) => {
+  const updated = updateSolutionMethod(req.user.id, Number(req.params.id), req.body || {}, true);
+  if (!updated) return res.status(404).json({ error: '解决方法不存在' });
+  res.json({ success: true, method: updated });
+});
+
+// ============ Notes (随手记) Routes ============
+
+app.get('/api/notes', auth, (req, res) => {
+  res.json(getNotes(req.user.id));
+});
+
+app.get('/api/notes/:id', auth, (req, res) => {
+  const note = getNote(req.user.id, Number(req.params.id));
+  if (!note) return res.status(404).json({ error: '笔记不存在' });
+  res.json(note);
+});
+
+app.post('/api/notes', auth, (req, res) => {
+  const { title, content } = req.body;
+  if (content === undefined || content === null) {
+    return res.status(400).json({ error: '笔记内容不能为空' });
+  }
+  const saved = createNote(req.user.id, {
+    title: title || '',
+    content: String(content),
+  });
+  res.json({ success: true, note: saved });
+});
+
+app.put('/api/notes/:id', auth, (req, res) => {
+  const { title, content } = req.body;
+  const updated = updateNote(req.user.id, Number(req.params.id), {
+    title: title || '',
+    content: content === undefined ? '' : String(content),
+  });
+  if (!updated) return res.status(404).json({ error: '笔记不存在' });
+  res.json({ success: true, note: updated });
+});
+
+app.delete('/api/notes/:id', auth, (req, res) => {
+  const ok = deleteNote(req.user.id, Number(req.params.id));
+  if (!ok) return res.status(404).json({ error: '笔记不存在' });
+  res.json({ success: true });
 });
 
 // ============ URL Fetch Route ============

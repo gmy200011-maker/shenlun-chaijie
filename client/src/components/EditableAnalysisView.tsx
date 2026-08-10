@@ -30,13 +30,14 @@ interface Props {
   onChange?: (patch: Partial<AnalysisResult>) => void;
   editable?: boolean;
   savedQuotes?: Set<number>;
-  onSaveQuote?: (q: GoldenQuote, i: number) => void;
+  onSaveQuote?: (q: GoldenQuote, i: number, linkId?: string | null) => void;
   savedSolutions?: Set<number>;
   onSaveSolution?: (
     p: AnalysisPoint,
     domain: string,
     tags: string[],
-    i: number
+    i: number,
+    linkId?: string | null
   ) => void;
 }
 
@@ -221,7 +222,7 @@ export default function EditableAnalysisView({
                       .split(",")
                       .map((t) => t.trim())
                       .filter(Boolean);
-                    onSaveSolution?.(p, domain, tags, i);
+                    onSaveSolution?.(p, domain, tags, i, (p as any).id ?? null);
                   }}
                   disabled={!p.content.trim() || saved}
                   className={`text-xs px-2.5 py-1 rounded-md border transition-colors whitespace-nowrap ${
@@ -369,7 +370,7 @@ export default function EditableAnalysisView({
                 )}
                 {onSaveQuote && (
                   <button
-                    onClick={() => onSaveQuote(q, i)}
+                    onClick={() => onSaveQuote(q, i, (q as any).id ?? null)}
                     disabled={!q.quote.trim() || saved}
                     className={`mt-2 text-xs px-2.5 py-1 rounded-md border transition-colors ${
                       saved

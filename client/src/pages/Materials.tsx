@@ -21,11 +21,22 @@ const domainColors: Record<string, string> = {
   生态: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
+interface Draft {
+  summary: string;
+  type: string;
+  domain: string;
+  tags: string;
+  usageScenario: string;
+}
+
 export default function Materials() {
   const [cards, setCards] = useState<MaterialCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [activeDomain, setActiveDomain] = useState<string>("all");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -43,6 +54,46 @@ export default function Materials() {
     const timer = setTimeout(fetchData, 300);
     return () => clearTimeout(timer);
   }, [fetchData]);
+
+  const startEdit = (c: MaterialCase) => {
+    setDraft({
+      summary: c.summary || "",
+      type: c.type || "",
+      domain: c.domain || "",
+      tags: (c.tags || []).join(", "),
+      usageScenario: c.usageScenario || "",
+    });
+    setEditingId(c.cardId!);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft(null);
+  };
+
+  const saveEdit = async (c: MaterialCase) => {
+    if (!c.articleId || !draft) return;
+    setSavingId(c.cardId!);
+    try {
+      await materialApi.update(c.articleId, c.linkId!, {
+        summary: draft.summary,
+        type: draft.type,
+        domain: draft.domain,
+        tags: draft.tags
+          .split(/[,，]/)
+          .map((s) => s.trim())
+          .filter(Boolean),
+        usageScenario: draft.usageScenario,
+      });
+      setEditingId(null);
+      setDraft(null);
+      await fetchData();
+    } catch {
+      alert("保存失败，请重试");
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   const domainCounts: Record<string, number> = {};
   cards.forEach((c) => {
@@ -132,30 +183,106 @@ export default function Materials() {
         <div className="grid grid-cols-2 gap-4">
           {filtered.map((card) => (
             <div key={card.cardId} className="card p-5 hover:border-brand-300 transition-colors">
-              <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <span className={`badge border ${domainColors[card.domain || ""] || "bg-ink-50 text-ink-700 border-ink-200"}`}>
-                    {card.domain || "未分类"}
-                  </span>
-                  <span className={`badge border ${caseTypeColors[card.type] || "bg-ink-50 text-ink-700 border-ink-200"}`}>
-                    {card.type}
-                  </span>
+              {editingId === card.cardId && draft ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-ink-500">内容摘要</label>
+                    <textarea
+                      className="input-field w-full h-24"
+                      value={draft.summary}
+                      onChange={(e) => setDraft({ ...draft, summary: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-ink-500">类型</label>
+                      <select
+                        className="input-field w-full"
+                        value={draft.type}
+                        onChange={(e) => setDraft({ ...draft, type: e.target.value })}
+                      >
+                        {Object.keys(caseTypeColors).map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-ink-500">领域</label>
+                      <select
+                        className="input-field w-full"
+                        value={draft.domain}
+                        onChange={(e) => setDraft({ ...draft, domain: e.target.value })}
+                      >
+                        {domains.map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-ink-500">标签（逗号分隔）</label>
+                    <input
+                      className="input-field w-full"
+                      value={draft.tags}
+                      onChange={(e) => setDraft({ ...draft, tags: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-ink-500">适用场景</label>
+                    <input
+                      className="input-field w-full"
+                      value={draft.usageScenario}
+                      onChange={(e) => setDraft({ ...draft, usageScenario: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end pt-1">
+                    <button onClick={cancelEdit} className="btn-secondary text-sm">取消</button>
+                    <button
+                      onClick={() => saveEdit(card)}
+                      disabled={savingId === card.cardId}
+                      className="btn-primary text-sm"
+                    >
+                      {savingId === card.cardId ? "保存中…" : "保存"}
+                    </button>
+                  </div>
                 </div>
-                {card.articleId && (
-                  <Link to={`/articles/${card.articleId}`} className="text-xs text-brand-500 hover:text-brand-700">
-                    {card.articleTitle} →
-                  </Link>
-                )}
-              </div>
-              <p className="text-sm text-ink-800 mb-3 leading-relaxed font-serif">{card.summary}</p>
-              {card.tags?.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {card.tags.map((tag, ti) => (<span key={ti} className="tag">#{tag}</span>))}
-                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className={`badge border ${domainColors[card.domain || ""] || "bg-ink-50 text-ink-700 border-ink-200"}`}>
+                        {card.domain || "未分类"}
+                      </span>
+                      <span className={`badge border ${caseTypeColors[card.type] || "bg-ink-50 text-ink-700 border-ink-200"}`}>
+                        {card.type}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {card.articleId && (
+                        <Link to={`/articles/${card.articleId}`} className="text-xs text-brand-500 hover:text-brand-700">
+                          {card.articleTitle} →
+                        </Link>
+                      )}
+                      <button
+                        onClick={() => startEdit(card)}
+                        className="text-xs text-ink-400 hover:text-brand-600"
+                        title="编辑并同步到历史记录"
+                      >
+                        编辑
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-sm text-ink-800 mb-3 leading-relaxed font-serif">{card.summary}</p>
+                  {card.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {card.tags.map((tag, ti) => (<span key={ti} className="tag">#{tag}</span>))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 pt-3 border-t border-ink-100">
+                    <span className="text-xs text-ink-400">适用场景：{card.usageScenario}</span>
+                  </div>
+                </>
               )}
-              <div className="flex items-center gap-2 pt-3 border-t border-ink-100">
-                <span className="text-xs text-ink-400">适用场景：{card.usageScenario}</span>
-              </div>
             </div>
           ))}
         </div>
