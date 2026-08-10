@@ -40,19 +40,27 @@ const JWT_SECRET = 'shenlun-toolkit-secret-key-2026';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// 公开健康检查（供 Render / 负载均衡探活，无需鉴权）
+// Public health check (used by hosting platforms for probing)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+// Wrap an async handler so rejections become 500s instead of crashing the lambda
+const wrap = (fn) => (req, res) => {
+  Promise.resolve(fn(req, res)).catch((err) => {
+    console.error('API error:', err);
+    if (!res.headersSent) res.status(500).json({ error: '服务器内部错误' });
+  });
+};
+
 // Auth middleware
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const header = req.headers.authorization;
   if (!header) return res.status(401).json({ error: '未登录' });
   const token = header.replace('Bearer ', '');
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = findUserById(decoded.id);
+    const user = await findUserById(decoded.id);
     if (!user) return res.status(401).json({ error: '用户不存在' });
     req.user = { id: user.id, username: user.username };
     next();
@@ -63,7 +71,7 @@ function auth(req, res, next) {
 
 // ============ Auth Routes ============
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', wrap(async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: '用户名和密码不能为空' });
@@ -74,22 +82,22 @@ app.post('/api/auth/register', (req, res) => {
   if (password.length < 6) {
     return res.status(400).json({ error: '密码长度不能少于6位' });
   }
-  const existing = findUserByUsername(username);
+  const existing = await findUserByUsername(username);
   if (existing) {
     return res.status(409).json({ error: '用户名已存在' });
   }
   const hashed = bcrypt.hashSync(password, 10);
-  const user = createUser(username, hashed);
+  const user = await createUser(username, hashed);
   const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
   res.json({ token, user: { id: user.id, username: user.username } });
-});
+}));
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', wrap(async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: '用户名和密码不能为空' });
   }
-  const user = findUserByUsername(username);
+  const user = await findUserByUsername(username);
   if (!user) {
     return res.status(401).json({ error: '用户名或密码错误' });
   }
@@ -98,7 +106,7 @@ app.post('/api/auth/login', (req, res) => {
   }
   const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
   res.json({ token, user: { id: user.id, username: user.username } });
-});
+}));
 
 app.get('/api/auth/me', auth, (req, res) => {
   res.json({ user: req.user });
@@ -106,64 +114,64 @@ app.get('/api/auth/me', auth, (req, res) => {
 
 // ============ Article Routes ============
 
-app.get('/api/articles', auth, (req, res) => {
-  const articles = getArticlesByUserId(req.user.id);
+app.get('/api/articles', auth, wrap(async (req, res) => {
+  const articles = await getArticlesByUserId(req.user.id);
   res.json(articles);
-});
+}));
 
-app.get('/api/articles/:id', auth, (req, res) => {
-  const article = getArticleById(parseInt(req.params.id), req.user.id);
+app.get('/api/articles/:id', auth, wrap(async (req, res) => {
+  const article = await getArticleById(parseInt(req.params.id), req.user.id);
   if (!article) return res.status(404).json({ error: '文章不存在' });
   res.json(article);
-});
+}));
 
-app.post('/api/articles', auth, (req, res) => {
-  const article = createArticle(req.user.id, req.body);
+app.post('/api/articles', auth, wrap(async (req, res) => {
+  const article = await createArticle(req.user.id, req.body);
   res.json(article);
-});
+}));
 
-app.put('/api/articles/:id', auth, (req, res) => {
-  const article = updateArticle(parseInt(req.params.id), req.user.id, req.body);
+app.put('/api/articles/:id', auth, wrap(async (req, res) => {
+  const article = await updateArticle(parseInt(req.params.id), req.user.id, req.body);
   if (!article) return res.status(404).json({ error: '文章不存在' });
   res.json(article);
-});
+}));
 
-app.delete('/api/articles/:id', auth, (req, res) => {
-  const ok = deleteArticle(parseInt(req.params.id), req.user.id);
+app.delete('/api/articles/:id', auth, wrap(async (req, res) => {
+  const ok = await deleteArticle(parseInt(req.params.id), req.user.id);
   if (!ok) return res.status(404).json({ error: '文章不存在' });
   res.json({ success: true });
-});
+}));
 
 // ============ Settings Routes ============
 
-app.get('/api/settings', auth, (req, res) => {
-  const settings = getSettings(req.user.id);
+app.get('/api/settings', auth, wrap(async (req, res) => {
+  const settings = await getSettings(req.user.id);
   res.json(settings);
-});
+}));
 
-app.put('/api/settings', auth, (req, res) => {
-  const settings = updateSettings(req.user.id, req.body);
+app.put('/api/settings', auth, wrap(async (req, res) => {
+  const settings = await updateSettings(req.user.id, req.body);
   res.json(settings);
-});
+}));
 
 // ============ Stats Route ============
 
-app.get('/api/stats', auth, (req, res) => {
-  const stats = getStats(req.user.id);
+app.get('/api/stats', auth, wrap(async (req, res) => {
+  const stats = await getStats(req.user.id);
   res.json(stats);
-});
+}));
 
 // ============ Search Route ============
 
-app.get('/api/materials/search', auth, (req, res) => {
+app.get('/api/materials/search', auth, wrap(async (req, res) => {
   const query = req.query.q || '';
-  const results = searchMaterialCases(req.user.id, query);
+  const results = await searchMaterialCases(req.user.id, query);
   res.json(results);
-});
+}));
 
 // Edit a single material case (writes straight back to the source article)
-app.put('/api/materials/:articleId/:linkId', auth, (req, res) => {
-  const updated = updateMaterialCase(
+app.put('/api/materials/:articleId/:linkId', auth, wrap(async (req, res) => {
+  const updated = await updateMaterialCase(
     req.user.id,
     parseInt(req.params.articleId),
     req.params.linkId,
@@ -171,30 +179,30 @@ app.put('/api/materials/:articleId/:linkId', auth, (req, res) => {
   );
   if (!updated) return res.status(404).json({ error: '素材不存在' });
   res.json({ success: true, card: updated });
-});
+}));
 
 // ============ Interview Questions Routes ============
 
-app.get('/api/interview-questions', auth, (req, res) => {
+app.get('/api/interview-questions', auth, wrap(async (req, res) => {
   const { q = '', type = '' } = req.query;
-  const results = getInterviewQuestions(req.user.id, { q, type });
+  const results = await getInterviewQuestions(req.user.id, { q, type });
   res.json(results);
-});
+}));
 
-app.put('/api/interview-questions/:id', auth, (req, res) => {
-  const updated = updateInterviewQuestion(req.user.id, Number(req.params.id), req.body || {}, true);
+app.put('/api/interview-questions/:id', auth, wrap(async (req, res) => {
+  const updated = await updateInterviewQuestion(req.user.id, Number(req.params.id), req.body || {}, true);
   if (!updated) return res.status(404).json({ error: '面试题不存在' });
   res.json({ success: true, question: updated });
-});
+}));
 
 // ============ Quotes (金句库) Routes ============
 
-app.post('/api/quotes', auth, (req, res) => {
+app.post('/api/quotes', auth, wrap(async (req, res) => {
   const { quote, source, articleId, articleTitle, tags } = req.body;
   if (!quote || !quote.trim()) {
     return res.status(400).json({ error: '金句内容不能为空' });
   }
-  const saved = createQuote(req.user.id, {
+  const saved = await createQuote(req.user.id, {
     quote: quote.trim(),
     source: source || '',
     articleId: articleId || null,
@@ -202,23 +210,23 @@ app.post('/api/quotes', auth, (req, res) => {
     tags: Array.isArray(tags) ? tags : [],
   });
   res.json({ success: true, quote: saved });
-});
+}));
 
-app.get('/api/quotes', auth, (req, res) => {
+app.get('/api/quotes', auth, wrap(async (req, res) => {
   const { q = '', tag = '' } = req.query;
-  const results = getQuotes(req.user.id, { q, tag });
+  const results = await getQuotes(req.user.id, { q, tag });
   res.json(results);
-});
+}));
 
-app.put('/api/quotes/:id', auth, (req, res) => {
-  const updated = updateQuote(req.user.id, Number(req.params.id), req.body || {}, true);
+app.put('/api/quotes/:id', auth, wrap(async (req, res) => {
+  const updated = await updateQuote(req.user.id, Number(req.params.id), req.body || {}, true);
   if (!updated) return res.status(404).json({ error: '金句不存在' });
   res.json({ success: true, quote: updated });
-});
+}));
 
 // ============ Solution Methods (解决方法库) Routes ============
 
-app.post('/api/solution-methods', auth, (req, res) => {
+app.post('/api/solution-methods', auth, wrap(async (req, res) => {
   const { heading, content, domain, tags, articleId, articleTitle } = req.body;
   if (!content || !content.trim()) {
     return res.status(400).json({ error: '解决方法内容不能为空' });
@@ -226,7 +234,7 @@ app.post('/api/solution-methods', auth, (req, res) => {
   if (!domain || !VALID_DOMAINS.includes(domain)) {
     return res.status(400).json({ error: '请选择领域（政治/经济/文化/社会/生态）' });
   }
-  const saved = createSolutionMethod(req.user.id, {
+  const saved = await createSolutionMethod(req.user.id, {
     heading: heading || '',
     content: content.trim(),
     domain,
@@ -235,69 +243,68 @@ app.post('/api/solution-methods', auth, (req, res) => {
     articleTitle: articleTitle || '',
   });
   res.json({ success: true, method: saved });
-});
+}));
 
-app.get('/api/solution-methods', auth, (req, res) => {
+app.get('/api/solution-methods', auth, wrap(async (req, res) => {
   const { q = '', domain = '' } = req.query;
-  const results = getSolutionMethods(req.user.id, { q, domain });
+  const results = await getSolutionMethods(req.user.id, { q, domain });
   res.json(results);
-});
+}));
 
-app.put('/api/solution-methods/:id', auth, (req, res) => {
-  const updated = updateSolutionMethod(req.user.id, Number(req.params.id), req.body || {}, true);
+app.put('/api/solution-methods/:id', auth, wrap(async (req, res) => {
+  const updated = await updateSolutionMethod(req.user.id, Number(req.params.id), req.body || {}, true);
   if (!updated) return res.status(404).json({ error: '解决方法不存在' });
   res.json({ success: true, method: updated });
-});
+}));
 
 // ============ Notes (随手记) Routes ============
 
-app.get('/api/notes', auth, (req, res) => {
-  res.json(getNotes(req.user.id));
-});
+app.get('/api/notes', auth, wrap(async (req, res) => {
+  res.json(await getNotes(req.user.id));
+}));
 
-app.get('/api/notes/:id', auth, (req, res) => {
-  const note = getNote(req.user.id, Number(req.params.id));
+app.get('/api/notes/:id', auth, wrap(async (req, res) => {
+  const note = await getNote(req.user.id, Number(req.params.id));
   if (!note) return res.status(404).json({ error: '笔记不存在' });
   res.json(note);
-});
+}));
 
-app.post('/api/notes', auth, (req, res) => {
+app.post('/api/notes', auth, wrap(async (req, res) => {
   const { title, content } = req.body;
   if (content === undefined || content === null) {
     return res.status(400).json({ error: '笔记内容不能为空' });
   }
-  const saved = createNote(req.user.id, {
+  const saved = await createNote(req.user.id, {
     title: title || '',
     content: String(content),
   });
   res.json({ success: true, note: saved });
-});
+}));
 
-app.put('/api/notes/:id', auth, (req, res) => {
+app.put('/api/notes/:id', auth, wrap(async (req, res) => {
   const { title, content } = req.body;
-  const updated = updateNote(req.user.id, Number(req.params.id), {
+  const updated = await updateNote(req.user.id, Number(req.params.id), {
     title: title || '',
     content: content === undefined ? '' : String(content),
   });
   if (!updated) return res.status(404).json({ error: '笔记不存在' });
   res.json({ success: true, note: updated });
-});
+}));
 
-app.delete('/api/notes/:id', auth, (req, res) => {
-  const ok = deleteNote(req.user.id, Number(req.params.id));
+app.delete('/api/notes/:id', auth, wrap(async (req, res) => {
+  const ok = await deleteNote(req.user.id, Number(req.params.id));
   if (!ok) return res.status(404).json({ error: '笔记不存在' });
   res.json({ success: true });
-});
+}));
 
 // ============ URL Fetch Route ============
 
-app.post('/api/fetch-url', auth, async (req, res) => {
+app.post('/api/fetch-url', auth, wrap(async (req, res) => {
   const { url } = req.body;
   if (!url) {
     return res.status(400).json({ error: '请输入文章链接' });
   }
 
-  // Basic URL validation
   let parsedUrl;
   try {
     parsedUrl = new URL(url);
@@ -329,7 +336,6 @@ app.post('/api/fetch-url', auth, async (req, res) => {
       return res.status(400).json({ error: '网页内容为空或过短' });
     }
 
-    // Extract title
     let title = '';
     const titleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]*)"/i);
     if (titleMatch) {
@@ -346,22 +352,15 @@ app.post('/api/fetch-url', auth, async (req, res) => {
       }
     }
 
-    // Extract article content
-    // WeChat articles: content is in #js_content
-    // Other sites: try article tag, then fall back to body text
     let contentText = '';
-
-    // Try WeChat content div
     const wxMatch = html.match(/<div[^>]*id="js_content"[^>]*>([\s\S]*?)<\/div>\s*(?:<div|<script|<\/div>\s*<div\s+class=")/i);
     if (wxMatch) {
       contentText = stripTags(wxMatch[1]);
     } else {
-      // Try <article> tag
       const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
       if (articleMatch) {
         contentText = stripTags(articleMatch[1]);
       } else {
-        // Try common content containers
         const contentPatterns = [
           /<div[^>]*class="[^"]*article-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
           /<div[^>]*class="[^"]*rich_media_content[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
@@ -378,17 +377,14 @@ app.post('/api/fetch-url', auth, async (req, res) => {
       }
     }
 
-    // Fallback: extract from body, removing script/style/nav/footer
     if (!contentText || contentText.trim().length < 50) {
       let bodyHtml = html;
-      // Remove script, style, nav, footer, header tags
       bodyHtml = bodyHtml.replace(/<script[\s\S]*?<\/script>/gi, '');
       bodyHtml = bodyHtml.replace(/<style[\s\S]*?<\/style>/gi, '');
       bodyHtml = bodyHtml.replace(/<nav[\s\S]*?<\/nav>/gi, '');
       bodyHtml = bodyHtml.replace(/<footer[\s\S]*?<\/footer>/gi, '');
       bodyHtml = bodyHtml.replace(/<header[\s\S]*?<\/header>/gi, '');
       bodyHtml = bodyHtml.replace(/<noscript[\s\S]*?<\/noscript>/gi, '');
-      // Extract body
       const bodyMatch = bodyHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
       if (bodyMatch) {
         contentText = stripTags(bodyMatch[1]);
@@ -397,7 +393,6 @@ app.post('/api/fetch-url', auth, async (req, res) => {
       }
     }
 
-    // Clean up content
     contentText = contentText
       .replace(/&nbsp;/g, ' ')
       .replace(/\u00a0/g, ' ')
@@ -406,11 +401,8 @@ app.post('/api/fetch-url', auth, async (req, res) => {
       .replace(/[ \t]+/g, ' ')
       .trim();
 
-    // Split into paragraphs and filter out very short lines (likely UI text)
     const paragraphs = contentText.split('\n').map(p => p.trim()).filter(p => p.length > 10);
     contentText = paragraphs.join('\n\n');
-
-    // Remove copyright / footer / boilerplate from the end
     contentText = removeCopyrightAndFooter(contentText);
 
     if (contentText.length < 50) {
@@ -426,7 +418,7 @@ app.post('/api/fetch-url', auth, async (req, res) => {
     }
     res.status(500).json({ error: `抓取网页失败: ${err.message}` });
   }
-});
+}));
 
 // Helper: strip HTML tags and convert to text
 function stripTags(html) {
@@ -457,7 +449,6 @@ function decodeHtmlEntities(text) {
 
 // Helper: remove copyright notices, footer boilerplate, and everything after
 function removeCopyrightAndFooter(text) {
-  // Patterns that indicate start of copyright/footer section
   const footerPatterns = [
     /版权[声明所有].*$/s,
     /凡注有.*$/s,
@@ -495,13 +486,11 @@ function removeCopyrightAndFooter(text) {
 }
 
 // Helper: resolve which API profile (provider/model/key) to actually use.
-// Settings may hold several profiles; the user picks one as "active".
 function getActiveConfig(settings) {
   const profiles = settings && settings.profiles;
   if (Array.isArray(profiles) && profiles.length > 0) {
     return profiles.find((p) => p.id === settings.activeProfileId) || profiles[0];
   }
-  // Legacy fallback (single-key settings before multi-profile support)
   if (settings && settings.apiKey) {
     return {
       apiBaseUrl: settings.apiBaseUrl,
@@ -514,13 +503,13 @@ function getActiveConfig(settings) {
 
 // ============ AI Analysis Route ============
 
-app.post('/api/analyze', auth, async (req, res) => {
+app.post('/api/analyze', auth, wrap(async (req, res) => {
   const { content } = req.body;
   if (!content || content.trim().length < 50) {
     return res.status(400).json({ error: '文章内容过短，请至少输入50个字符' });
   }
 
-  const settings = getSettings(req.user.id);
+  const settings = await getSettings(req.user.id);
   const activeConfig = getActiveConfig(settings);
   if (!activeConfig || !activeConfig.apiKey) {
     return res.status(400).json({
@@ -596,12 +585,6 @@ ${content}`;
 
     if (!response.ok) {
       const errText = await response.text();
-      // IMPORTANT: never forward the upstream provider's HTTP status (e.g. a
-      // 401 from an invalid API key) to the browser. Our own auth middleware
-      // also uses 401, so a forwarded 401 would make the frontend wrongly treat
-      // it as "session expired" and bounce the user to the login page. Map all
-      // upstream AI failures to 502 (Bad Gateway) so the SPA shows an error
-      // message instead of triggering an auth redirect.
       return res.status(502).json({
         error: `AI服务返回错误: ${response.status}`,
         detail: errText.substring(0, 500),
@@ -611,7 +594,6 @@ ${content}`;
     const data = await response.json();
     const rawContent = data.choices[0]?.message?.content || '';
 
-    // Extract JSON from the response
     let jsonStr = rawContent;
     const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (jsonMatch) {
@@ -640,29 +622,34 @@ ${content}`;
       error: `请求AI服务失败: ${err.message}`,
     });
   }
-});
+}));
 
-// ============ Serve static files (production) ============
+// ============ Serve static files (production, non-Vercel only) ============
+// On Vercel the frontend is served by Vercel's static host and SPA routing is
+// handled by vercel.json, so we skip express static hosting there.
+if (!process.env.VERCEL) {
+  const { existsSync: exists } = await import('fs');
+  const { join: joinPath, dirname: dirOf } = await import('path');
+  const { fileURLToPath: toPath } = await import('url');
 
-import { existsSync as exists } from 'fs';
-import { join as joinPath, dirname as dirOf } from 'path';
-import { fileURLToPath as toPath } from 'url';
+  const __dirname = dirOf(toPath(import.meta.url));
+  const clientDist = joinPath(__dirname, '..', 'client', 'dist_v2');
 
-const __dirname = dirOf(toPath(import.meta.url));
-const clientDist = joinPath(__dirname, '..', 'client', 'dist_v2');
+  if (exists(clientDist)) {
+    app.use(express.static(clientDist));
+    app.get('*', (req, res) => {
+      if (!req.path.startsWith('/api')) {
+        res.sendFile(joinPath(clientDist, 'index.html'));
+      }
+    });
+  }
 
-if (exists(clientDist)) {
-  app.use(express.static(clientDist));
-  app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api')) {
-      res.sendFile(joinPath(clientDist, 'index.html'));
-    }
+  app.listen(PORT, () => {
+    console.log(`\n  🚀 申论拆解工具服务已启动`);
+    console.log(`  📡 API地址: http://localhost:${PORT}/api`);
+    console.log(`  🌐 前端地址: http://localhost:${PORT} (生产模式)`);
+    console.log(`  💻 开发模式: 在 client 目录运行 npm run dev\n`);
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`\n  🚀 申论拆解工具服务已启动`);
-  console.log(`  📡 API地址: http://localhost:${PORT}/api`);
-  console.log(`  🌐 前端地址: http://localhost:${PORT} (生产模式)`);
-  console.log(`  💻 开发模式: 在 client 目录运行 npm run dev\n`);
-});
+export default app;

@@ -1,41 +1,58 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { Redis } from '@upstash/redis';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// ---- Storage backend selection ----
+// On Vercel (serverless, read-only fs) we persist the whole database as a
+// single JSON document in Upstash Redis. Locally (no UPSTASH_* env) we fall
+// back to a plain file so development keeps working unchanged.
+const USE_REDIS = !!(process.env.UPSTASH_URL && process.env.UPSTASH_TOKEN);
+let redis = null;
+if (USE_REDIS) {
+  redis = new Redis({ url: process.env.UPSTASH_URL, token: process.env.UPSTASH_TOKEN });
+}
+const DB_KEY = 'shenlun_db';
+
+function getDefaultDB() {
+  return {
+    users: [],
+    articles: [],
+    settings: [],
+    interviewQuestions: [],
+    quotes: [],
+    solutionMethods: [],
+    notes: [],
+    nextUserId: 1,
+    nextArticleId: 1,
+    nextSettingsId: 1,
+    nextInterviewId: 1,
+    nextQuoteId: 1,
+    nextSolutionId: 1,
+    nextNoteId: 1,
+  };
 }
 
-// Initialize database
-function initDB() {
-  if (!fs.existsSync(DB_FILE)) {
-    const defaultDB = {
-      users: [],
-      articles: [],
-      settings: [],
-      interviewQuestions: [],
-      quotes: [],
-      solutionMethods: [],
-      notes: [],
-      nextUserId: 1,
-      nextArticleId: 1,
-      nextSettingsId: 1,
-      nextInterviewId: 1,
-      nextQuoteId: 1,
-      nextSolutionId: 1,
-      nextNoteId: 1,
-    };
-    fs.writeFileSync(DB_FILE, JSON.stringify(defaultDB, null, 2));
+async function readDB() {
+  let data;
+  if (USE_REDIS) {
+    data = await redis.get(DB_KEY);
+    if (!data) {
+      data = getDefaultDB();
+      await redis.set(DB_KEY, data);
+    }
+  } else {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(DB_FILE)) {
+      fs.writeFileSync(DB_FILE, JSON.stringify(getDefaultDB(), null, 2));
+    }
+    data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
   }
-}
-
-function readDB() {
-  initDB();
-  const raw = fs.readFileSync(DB_FILE, 'utf-8');
-  let data = JSON.parse(raw);
   // Backfill new collections for legacy databases
   const defaults = {
     interviewQuestions: [],
@@ -54,27 +71,32 @@ function readDB() {
       changed = true;
     }
   }
-  if (changed) writeDB(data);
+  if (changed) await writeDB(data);
   return data;
 }
 
-function writeDB(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+async function writeDB(data) {
+  if (USE_REDIS) {
+    await redis.set(DB_KEY, data);
+  } else {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  }
 }
 
 // User operations
-function findUserByUsername(username) {
-  const db = readDB();
+async function findUserByUsername(username) {
+  const db = await readDB();
   return db.users.find(u => u.username === username);
 }
 
-function findUserById(id) {
-  const db = readDB();
+async function findUserById(id) {
+  const db = await readDB();
   return db.users.find(u => u.id === id);
 }
 
-function createUser(username, hashedPassword) {
-  const db = readDB();
+async function createUser(username, hashedPassword) {
+  const db = await readDB();
   const user = {
     id: db.nextUserId++,
     username,
@@ -82,25 +104,25 @@ function createUser(username, hashedPassword) {
     createdAt: new Date().toISOString(),
   };
   db.users.push(user);
-  writeDB(db);
+  await writeDB(db);
   return user;
 }
 
 // Article operations
-function getArticlesByUserId(userId) {
-  const db = readDB();
+async function getArticlesByUserId(userId) {
+  const db = await readDB();
   return db.articles
     .filter(a => a.userId === userId)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function getArticleById(id, userId) {
-  const db = readDB();
+async function getArticleById(id, userId) {
+  const db = await readDB();
   return db.articles.find(a => a.id === id && a.userId === userId);
 }
 
-function createArticle(userId, data) {
-  const db = readDB();
+async function createArticle(userId, data) {
+  const db = await readDB();
   const id = db.nextArticleId++;
   const now = new Date().toISOString();
   const materialCases = (data.materialCases || []).map((c, i) => ({
@@ -148,12 +170,12 @@ function createArticle(userId, data) {
     article.interviewQuestion = { ...data.interviewQuestion, id: iqLinkId };
   }
 
-  writeDB(db);
+  await writeDB(db);
   return article;
 }
 
-function updateArticle(id, userId, updates) {
-  const db = readDB();
+async function updateArticle(id, userId, updates) {
+  const db = await readDB();
   const idx = db.articles.findIndex(a => a.id === id && a.userId === userId);
   if (idx === -1) return null;
   db.articles[idx] = {
@@ -161,12 +183,12 @@ function updateArticle(id, userId, updates) {
     ...updates,
     updatedAt: new Date().toISOString(),
   };
-  writeDB(db);
+  await writeDB(db);
   return db.articles[idx];
 }
 
-function deleteArticle(id, userId) {
-  const db = readDB();
+async function deleteArticle(id, userId) {
+  const db = await readDB();
   const idx = db.articles.findIndex(a => a.id === id && a.userId === userId);
   if (idx === -1) return false;
   db.articles.splice(idx, 1);
@@ -174,14 +196,14 @@ function deleteArticle(id, userId) {
   db.interviewQuestions = db.interviewQuestions.filter(
     q => !(q.articleId === id && q.userId === userId)
   );
-  writeDB(db);
+  await writeDB(db);
   return true;
 }
 
 // Settings operations
 // Legacy single-key shape: { apiKey, apiBaseUrl, model }
 // New multi-profile shape: { profiles: [{id,name,apiBaseUrl,apiKey,model}], activeProfileId }
-function migrateSettings(settings) {
+async function migrateSettings(settings) {
   if (!settings.profiles) {
     const legacy = {
       id: 'legacy',
@@ -204,8 +226,8 @@ function migrateSettings(settings) {
   return settings;
 }
 
-function getSettings(userId) {
-  const db = readDB();
+async function getSettings(userId) {
+  const db = await readDB();
   let settings = db.settings.find(s => s.userId === userId);
   if (!settings) {
     settings = {
@@ -215,15 +237,15 @@ function getSettings(userId) {
       activeProfileId: '',
     };
     db.settings.push(settings);
-    writeDB(db);
+    await writeDB(db);
   }
-  const migrated = migrateSettings(settings);
-  if (migrated !== settings) writeDB(db);
+  const migrated = await migrateSettings(settings);
+  if (migrated !== settings) await writeDB(db);
   return migrated;
 }
 
-function updateSettings(userId, updates) {
-  const db = readDB();
+async function updateSettings(userId, updates) {
+  const db = await readDB();
   let idx = db.settings.findIndex(s => s.userId === userId);
   if (idx === -1) {
     const settings = {
@@ -233,18 +255,18 @@ function updateSettings(userId, updates) {
       activeProfileId: updates.activeProfileId || '',
     };
     db.settings.push(settings);
-    writeDB(db);
+    await writeDB(db);
     return settings;
   }
   db.settings[idx] = { ...db.settings[idx], ...updates };
-  const migrated = migrateSettings(db.settings[idx]);
-  writeDB(db);
+  const migrated = await migrateSettings(db.settings[idx]);
+  await writeDB(db);
   return migrated;
 }
 
 // Material case search
-function searchMaterialCases(userId, query) {
-  const db = readDB();
+async function searchMaterialCases(userId, query) {
+  const db = await readDB();
   const articles = db.articles.filter(a => a.userId === userId);
   const cards = [];
   articles.forEach(article => {
@@ -274,8 +296,8 @@ function searchMaterialCases(userId, query) {
 }
 
 // Interview question operations
-function getInterviewQuestions(userId, { q = '', type = '' } = {}) {
-  const db = readDB();
+async function getInterviewQuestions(userId, { q = '', type = '' } = {}) {
+  const db = await readDB();
   let list = db.interviewQuestions.filter(iq => iq.userId === userId);
   if (type) {
     list = list.filter(iq => iq.type === type);
@@ -292,8 +314,8 @@ function getInterviewQuestions(userId, { q = '', type = '' } = {}) {
 }
 
 // Quote operations (金句库)
-function createQuote(userId, data) {
-  const db = readDB();
+async function createQuote(userId, data) {
+  const db = await readDB();
   // Deduplicate: same quote + articleId
   const existing = db.quotes.find(
     q => q.userId === userId && q.quote === data.quote && q.articleId === data.articleId
@@ -312,12 +334,12 @@ function createQuote(userId, data) {
     createdAt: new Date().toISOString(),
   };
   db.quotes.push(quote);
-  writeDB(db);
+  await writeDB(db);
   return quote;
 }
 
-function getQuotes(userId, { q = '', tag = '' } = {}) {
-  const db = readDB();
+async function getQuotes(userId, { q = '', tag = '' } = {}) {
+  const db = await readDB();
   let list = db.quotes.filter(qt => qt.userId === userId);
   if (tag) {
     list = list.filter(qt => (qt.tags || []).includes(tag));
@@ -335,8 +357,8 @@ function getQuotes(userId, { q = '', tag = '' } = {}) {
 }
 
 // Solution method operations (解决方法库)
-function createSolutionMethod(userId, data) {
-  const db = readDB();
+async function createSolutionMethod(userId, data) {
+  const db = await readDB();
   const content = (data.content || '').trim();
   // Deduplicate: same content + articleId
   const existing = db.solutionMethods.find(
@@ -357,12 +379,12 @@ function createSolutionMethod(userId, data) {
     createdAt: new Date().toISOString(),
   };
   db.solutionMethods.push(method);
-  writeDB(db);
+  await writeDB(db);
   return method;
 }
 
-function getSolutionMethods(userId, { q = '', domain = '' } = {}) {
-  const db = readDB();
+async function getSolutionMethods(userId, { q = '', domain = '' } = {}) {
+  const db = await readDB();
   let list = db.solutionMethods.filter(m => m.userId === userId);
   if (domain) {
     list = list.filter(m => m.domain === domain);
@@ -380,8 +402,8 @@ function getSolutionMethods(userId, { q = '', domain = '' } = {}) {
 }
 
 // Notes operations (随手记)
-function createNote(userId, data) {
-  const db = readDB();
+async function createNote(userId, data) {
+  const db = await readDB();
   const note = {
     id: db.nextNoteId++,
     userId,
@@ -391,12 +413,12 @@ function createNote(userId, data) {
     updatedAt: new Date().toISOString(),
   };
   db.notes.push(note);
-  writeDB(db);
+  await writeDB(db);
   return note;
 }
 
-function updateNote(userId, id, data) {
-  const db = readDB();
+async function updateNote(userId, id, data) {
+  const db = await readDB();
   const idx = db.notes.findIndex(n => n.id === id && n.userId === userId);
   if (idx === -1) return null;
   db.notes[idx] = {
@@ -405,36 +427,36 @@ function updateNote(userId, id, data) {
     content: data.content || '',
     updatedAt: new Date().toISOString(),
   };
-  writeDB(db);
+  await writeDB(db);
   return db.notes[idx];
 }
 
-function getNotes(userId) {
-  const db = readDB();
+async function getNotes(userId) {
+  const db = await readDB();
   return db.notes
     .filter(n => n.userId === userId)
     .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 }
 
-function getNote(userId, id) {
-  const db = readDB();
+async function getNote(userId, id) {
+  const db = await readDB();
   return db.notes.find(n => n.id === id && n.userId === userId) || null;
 }
 
-function deleteNote(userId, id) {
-  const db = readDB();
+async function deleteNote(userId, id) {
+  const db = await readDB();
   const idx = db.notes.findIndex(n => n.id === id && n.userId === userId);
   if (idx === -1) return false;
   db.notes.splice(idx, 1);
-  writeDB(db);
+  await writeDB(db);
   return true;
 }
 
 // ===== In-place edit of library entries, with sync back to the source article =====
 // New data carries linkId (the article-internal item id) for precise write-back;
 // legacy data without linkId falls back to matching by the original content.
-function updateQuote(userId, id, data, sync) {
-  const db = readDB();
+async function updateQuote(userId, id, data, sync) {
+  const db = await readDB();
   const idx = db.quotes.findIndex((q) => q.id === id && q.userId === userId);
   if (idx === -1) return null;
   const q = db.quotes[idx];
@@ -456,12 +478,12 @@ function updateQuote(userId, id, data, sync) {
       }
     }
   }
-  writeDB(db);
+  await writeDB(db);
   return next;
 }
 
-function updateSolutionMethod(userId, id, data, sync) {
-  const db = readDB();
+async function updateSolutionMethod(userId, id, data, sync) {
+  const db = await readDB();
   const idx = db.solutionMethods.findIndex((m) => m.id === id && m.userId === userId);
   if (idx === -1) return null;
   const m = db.solutionMethods[idx];
@@ -484,12 +506,12 @@ function updateSolutionMethod(userId, id, data, sync) {
       }
     }
   }
-  writeDB(db);
+  await writeDB(db);
   return next;
 }
 
-function updateInterviewQuestion(userId, id, data, sync) {
-  const db = readDB();
+async function updateInterviewQuestion(userId, id, data, sync) {
+  const db = await readDB();
   const idx = db.interviewQuestions.findIndex((q) => q.id === id && q.userId === userId);
   if (idx === -1) return null;
   const q = db.interviewQuestions[idx];
@@ -512,14 +534,14 @@ function updateInterviewQuestion(userId, id, data, sync) {
       a.updatedAt = new Date().toISOString();
     }
   }
-  writeDB(db);
+  await writeDB(db);
   return next;
 }
 
 // Materials library is a direct aggregate of each article's materialCases,
 // so editing a card writes straight back to the source article.
-function updateMaterialCase(userId, articleId, linkId, data) {
-  const db = readDB();
+async function updateMaterialCase(userId, articleId, linkId, data) {
+  const db = await readDB();
   const a = db.articles.find((x) => x.id === articleId && x.userId === userId);
   if (!a || !Array.isArray(a.materialCases)) return null;
   let idx = a.materialCases.findIndex((c) => c.id === linkId);
@@ -539,13 +561,13 @@ function updateMaterialCase(userId, articleId, linkId, data) {
     usageScenario: data.usageScenario != null ? data.usageScenario : c.usageScenario,
   };
   a.updatedAt = new Date().toISOString();
-  writeDB(db);
+  await writeDB(db);
   return a.materialCases[idx];
 }
 
 // Stats
-function getStats(userId) {
-  const db = readDB();
+async function getStats(userId) {
+  const db = await readDB();
   const articles = db.articles.filter(a => a.userId === userId);
   const allCases = [];
   articles.forEach(article => {
@@ -585,8 +607,7 @@ function getStats(userId) {
   };
 }
 
-module.exports = {
-  initDB,
+export {
   readDB,
   writeDB,
   findUserByUsername,

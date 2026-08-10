@@ -3,6 +3,9 @@ node_modules/
 server/node_modules/
 client/node_modules/
 
+# 本地 npm 缓存（沙箱隔离用）
+.npmcache/
+
 # 构建产物（部署时由 build 脚本重新生成）
 client/dist_v2/
 
