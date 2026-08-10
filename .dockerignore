@@ -1,0 +1,11 @@
+node_modules
+client/node_modules
+client/dist_v2
+.workbuddy
+.git
+.gitignore
+server/data/db.json
+.env
+npm-debug.log
+README.md
+DEPLOY.md
