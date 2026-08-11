@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { safeText } from "../utils/safeText";
 
 export default function Login() {
   const { login } = useAuth();
@@ -18,7 +19,9 @@ export default function Login() {
       await login(username, password);
       navigate("/");
     } catch (err: any) {
-      setError(err.response?.data?.error || "登录失败，请重试");
+      console.error("[Login] 登录失败，原始错误：", err?.response?.data || err);
+      const raw = err?.response?.data?.error || err?.response?.data?.message || "登录失败，请重试";
+      setError(safeText(raw));
     } finally {
       setLoading(false);
     }

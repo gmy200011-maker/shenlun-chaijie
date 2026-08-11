@@ -77,6 +77,13 @@ api.interceptors.response.use(
       }
     }
     // Normalize error to always have a string .message
+    // Defensive: ensure downstream components never read an object error.
+    if (
+      err?.response?.data &&
+      typeof err.response.data.error === "object"
+    ) {
+      err.response.data.error = JSON.stringify(err.response.data.error);
+    }
     const msg =
       err?.response?.data?.error ||
       err?.response?.data?.message ||

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { safeText } from "../utils/safeText";
 
 export default function Register() {
   const { register } = useAuth();
@@ -21,7 +22,10 @@ export default function Register() {
       await register(username, password);
       navigate("/");
     } catch (err: any) {
-      setError(err.response?.data?.error || "注册失败，请重试");
+      // Log the raw payload so we can see the real server response in devtools.
+      console.error("[Register] 注册失败，原始错误：", err?.response?.data || err);
+      const raw = err?.response?.data?.error || err?.response?.data?.message || "注册失败，请重试";
+      setError(safeText(raw));
     } finally {
       setLoading(false);
     }
