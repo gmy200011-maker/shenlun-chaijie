@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   findUserByUsername,
   findUserById,
@@ -644,18 +647,14 @@ app.use((err, req, res, next) => {
 // On Vercel the frontend is served by Vercel's static host and SPA routing is
 // handled by vercel.json, so we skip express static hosting there.
 if (!process.env.VERCEL) {
-  const { existsSync: exists } = await import('fs');
-  const { join: joinPath, dirname: dirOf } = await import('path');
-  const { fileURLToPath: toPath } = await import('url');
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const clientDist = path.join(__dirname, '..', 'client', 'dist_v2');
 
-  const __dirname = dirOf(toPath(import.meta.url));
-  const clientDist = joinPath(__dirname, '..', 'client', 'dist_v2');
-
-  if (exists(clientDist)) {
+  if (fs.existsSync(clientDist)) {
     app.use(express.static(clientDist));
     app.get('*', (req, res) => {
       if (!req.path.startsWith('/api')) {
-        res.sendFile(joinPath(clientDist, 'index.html'));
+        res.sendFile(path.join(clientDist, 'index.html'));
       }
     });
   }
