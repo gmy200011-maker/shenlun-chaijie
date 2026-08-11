@@ -79,7 +79,9 @@ export default async function (req, res) {
       const elapsed = Date.now() - start;
       console.error(`[lambda] ERROR after ${elapsed}ms on ${path}:`, err);
       sendError(res, 500, {
-        error: '服务器内部错误',
+        error:
+          '服务器内部错误：' +
+          (err && err.message ? err.message : 'unknown error'),
         reason: err && err.message ? err.message : 'unknown error',
         path,
         elapsedMs: elapsed,

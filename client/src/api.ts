@@ -84,14 +84,23 @@ api.interceptors.response.use(
     ) {
       err.response.data.error = JSON.stringify(err.response.data.error);
     }
-    const msg =
-      err?.response?.data?.error ||
-      err?.response?.data?.message ||
+    const data = err?.response?.data;
+    let msg =
+      (typeof data?.error === "string" ? data.error : undefined) ||
+      (typeof data?.message === "string" ? data.message : undefined) ||
       err?.message ||
       "网络请求失败";
-    const normalizedError = new Error(
-      typeof msg === "string" ? msg : String(msg)
-    );
+    // 拼接后端附带的真实诊断字段，避免出错原因被吞掉看不到
+    if (data && typeof data === "object") {
+      const extra = [];
+      if (data.reason && data.reason !== msg && String(data.reason).length < 200)
+        extra.push(String(data.reason));
+      if (data.detail) extra.push(String(data.detail).slice(0, 200));
+      if (data.raw) extra.push(String(data.raw).slice(0, 200));
+      if (data.path) extra.push("path=" + data.path);
+      if (extra.length) msg = msg + " ｜ " + extra.join(" ｜ ");
+    }
+    const normalizedError = new Error(msg);
     // Preserve response for components that access it
     if (err.response) {
       (normalizedError as any).response = err.response;
