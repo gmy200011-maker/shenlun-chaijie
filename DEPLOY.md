@@ -10,16 +10,17 @@
 Vercel 是**无状态 Serverless 环境**：没有常驻进程、文件系统只读。因此本项目已做如下改造：
 
 - 后端 Express 通过 `serverless-http` 包装成云函数 `api/index.js`；`vercel.json` 已配置路由（`/api/*` → 函数，其余 → 前端）。
-- 数据存储从本地 `db.json` 改为 **Upstash Redis**（云端 KV，免费、无需信用卡）。
-- 未配置 Upstash 时，`server/db.js` 自动回退到本地 `fs`，方便本机 `npm run dev` 调试。
+- 数据存储优先用 **Upstash Redis**（云端 KV，免费、无需信用卡）。
+- **未配置 Upstash 也能跑**：`server/db.js` 在 Vercel 下自动回退到可写的 `/tmp/shenlun-data/db.json`（Vercel 唯一可写路径），不会再因只读文件系统 500。本地 `npm run dev` 仍用仓库内 `db.json`。
 
-> 结论：**部署到 Vercel 必须配置 Upstash**，否则云端写入会因只读文件系统失败。
+> 结论：**Upstash 现在是可选的**，不配也能注册/使用（不再 500）。但 `/tmp` 是临时存储——冷启动、实例轮换、重新部署都会清空数据。要**持久保存账号与素材，请配置 Upstash**（见下）。
 
 ---
 
 ## 方式一：Vercel（推荐，零信用卡，免费）
 
-### 第 1 步：准备 Upstash Redis（免费、无需信用卡）
+### 第 1 步：准备 Upstash Redis（免费、无需信用卡，**可选但推荐**）
+> 跳过此步也能部署成功（数据存于 `/tmp`，临时）。要持久保存数据请配置。
 1. 打开 [upstash.com](https://upstash.com) 注册并登录。
 2. **Create Database** → 选 **Redis** → 区域选离你近的（如 `ap-southeast-1` 新加坡）→ 选 **Free** tier。
 3. 建好后进入数据库详情，切到 **REST API** 标签页，复制：
@@ -33,9 +34,10 @@ Vercel 是**无状态 Serverless 环境**：没有常驻进程、文件系统只
    - **Framework Preset**：Other
    - **Build Command**：`npm run build`
    - **Output Directory**：`client/dist_v2`
-4. **关键**：展开 **Environment Variables**，添加两条：
+4. **（可选但推荐）** 展开 **Environment Variables**，添加两条以持久化数据：
    - `UPSTASH_URL` = 第 1 步复制的 URL
    - `UPSTASH_TOKEN` = 第 1 步复制的 token
+   - 不填也能部署成功，只是数据存于 `/tmp`（临时，重启/重部署可能丢失）。
 5. 点击 **Deploy**。约 1–2 分钟后给出 `https://xxx.vercel.app` 域名。
 
 ### 第 3 步：首次使用
