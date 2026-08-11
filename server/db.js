@@ -5,7 +5,14 @@ import { Redis } from '@upstash/redis';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, 'data');
+// On Vercel the deployed code directory (/var/task) is READ-ONLY, so any file
+// persistence must go to the writable /tmp. Locally we keep the repo-local
+// data/ folder. Without this, writeFileSync throws EROFS and the whole request
+// 500s. /tmp is per-instance/ephemeral, so configure Upstash for real
+// persistence — this is just a safe non-crashing fallback.
+const DATA_DIR = process.env.VERCEL
+  ? path.join('/tmp', 'shenlun-data')
+  : path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 // ---- Storage backend selection ----

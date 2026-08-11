@@ -49,7 +49,11 @@ app.get('/api/health', (req, res) => {
 const wrap = (fn) => (req, res) => {
   Promise.resolve(fn(req, res)).catch((err) => {
     console.error('API error:', err);
-    if (!res.headersSent) res.status(500).json({ error: '服务器内部错误' });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: '服务器内部错误：' + (err && err.message ? err.message : 'unknown error'),
+      });
+    }
   });
 };
 
@@ -631,7 +635,9 @@ ${content}`;
 app.use((err, req, res, next) => {
   console.error('Unhandled API error:', err);
   if (res.headersSent) return next(err);
-  res.status(500).json({ error: '服务器内部错误' });
+  res.status(500).json({
+    error: '服务器内部错误：' + (err && err.message ? err.message : 'unknown error'),
+  });
 });
 
 // ============ Serve static files (production, non-Vercel only) ============
