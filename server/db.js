@@ -26,6 +26,27 @@ if (USE_REDIS) {
 }
 const DB_KEY = 'shenlun_db';
 
+// Hard cap on any single Upstash round-trip. Vercel functions time out at
+// 10s and return a generic 504; if Upstash is unreachable (wrong region,
+// firewall, DNS, or simply misconfigured) an un-guarded `await redis.get`
+// would hang for the full 10s and 504 every request. We race the call
+// against a 4s timer so a dead Redis never blocks the request.
+const REDIS_TIMEOUT_MS = 4000;
+
+// Runtime availability flag. Starts equal to USE_REDIS. The moment ANY Redis
+// op times out or throws, we flip this to false and fall back to the /tmp
+// filesystem for the remainder of the lambda's life. This guarantees the app
+// stays responsive (no 504s) even when Upstash is configured-but-unreachable.
+let redisLive = USE_REDIS;
+
+function redisOp(promise) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Redis operation timed out')), REDIS_TIMEOUT_MS);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 function getDefaultDB() {
   return {
     users: [],
@@ -47,13 +68,19 @@ function getDefaultDB() {
 
 async function readDB() {
   let data;
-  if (USE_REDIS) {
-    data = await redis.get(DB_KEY);
-    if (!data) {
-      data = getDefaultDB();
-      await redis.set(DB_KEY, data);
+  if (redisLive) {
+    try {
+      data = await redisOp(redis.get(DB_KEY));
+      if (!data) {
+        data = getDefaultDB();
+        await redisOp(redis.set(DB_KEY, data));
+      }
+    } catch (err) {
+      console.error('[db] Redis read failed, falling back to /tmp:', err.message);
+      redisLive = false;
     }
-  } else {
+  }
+  if (!redisLive) {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(DB_FILE)) {
       fs.writeFileSync(DB_FILE, JSON.stringify(getDefaultDB(), null, 2));
@@ -83,9 +110,16 @@ async function readDB() {
 }
 
 async function writeDB(data) {
-  if (USE_REDIS) {
-    await redis.set(DB_KEY, data);
-  } else {
+  if (redisLive) {
+    try {
+      await redisOp(redis.set(DB_KEY, data));
+      return;
+    } catch (err) {
+      console.error('[db] Redis write failed, falling back to /tmp:', err.message);
+      redisLive = false;
+    }
+  }
+  if (!redisLive) {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
   }
