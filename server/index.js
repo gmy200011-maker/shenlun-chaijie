@@ -624,6 +624,16 @@ ${content}`;
   }
 }));
 
+// ============ Final Express error handler ============
+// Guarantees every unhandled error returns a clean JSON string instead of
+// leaking an object that Vercel would serialize as {code, message} and that
+// the client would then try (and fail) to render as a React child.
+app.use((err, req, res, next) => {
+  console.error('Unhandled API error:', err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: '服务器内部错误' });
+});
+
 // ============ Serve static files (production, non-Vercel only) ============
 // On Vercel the frontend is served by Vercel's static host and SPA routing is
 // handled by vercel.json, so we skip express static hosting there.
